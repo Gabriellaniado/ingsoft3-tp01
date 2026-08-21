@@ -1,0 +1,9 @@
+name: DORA - lead time
+on: [workflow_dispatch]
+jobs:
+  lead-time:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: DeveloperMetrics/lead-time-for-changes@main
+        with:
+          workflows: 'CI'
