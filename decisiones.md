@@ -62,3 +62,23 @@ Utilice la IA para que me de los comandos correctos que deberia utilizar. Ademas
 
 La app la hizo completamente la IA, yo le di indicaciones previas de lo que queria que haga y el generó todo. Luego yo fui haciendo pruebas para asegurarme de que todo funcione correctamente.
 
+
+# Decisiones TP3
+
+## Duración del sprint.
+El sprint que elegí es de una duración de una semana. La idea es poder seguir el cronograma de la materia y realizar un tp por semana. Si me estiro más allá de una semana probablemente no llegue con el tiempo para la entrega final del proyecto.
+
+## Número del límite de trabajo en progreso
+Como bien sugiere el video y la guía, elegí 2 tareas como límite para evitar el hecho de hacer demasiadas cosas al mismo tiempo y que nada se termine estancando el progreso. El video sugiere n trabajadores +1.
+
+## Diagnóstico de la historia mal escrita: por qué está mal escrita y cómo la reescribirías. Dos renglones.
+No aporta valor de negocio ni está enfocada en el usuario final. Es una tarea técnica. Además, el rol Como desarrollador es incorrecto porque el desarrollador es quien implementa la solución, no el beneficiario del valor, y el beneficio para guardar los datos es una obviedad técnica, no una necesidad real del negocio.
+
+Como usuario registrado, quiero poder actualizar mis datos de perfil para mantener mi información de contacto al día. 
+(Criterio de aceptación: Validar que los cambios se persistan correctamente en la base de datos).
+
+## Problemas encontrados y cómo los resolviste.
+No encontre grandes problemas en la realización de este trabajo.
+
+## Declaración de uso de IA
+No utilice IA en este trabajo.
