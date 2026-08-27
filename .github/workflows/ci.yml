@@ -24,6 +24,8 @@ jobs:
           context: ./app/backend          # ajustá a donde esté TU Dockerfile
           push: false                 # todavía no publicamos la imagen en ningún lado
           tags: backend:ci            # el nombre de la imagen (hoy sólo vive dentro del runner)
+          cache-from: type=gha,scope=backend
+          cache-to: type=gha,mode=max,scope=backend
 
   build-frontend:
     runs-on: ubuntu-latest
