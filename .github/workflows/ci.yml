@@ -25,7 +25,7 @@ jobs:
           push: false                 # todavía no publicamos la imagen en ningún lado
           tags: backend:ci            # el nombre de la imagen (hoy sólo vive dentro del runner)
 
-    build-frontend:
+  build-frontend:
     runs-on: ubuntu-latest
     steps:
       - name: Qué estamos verificando
