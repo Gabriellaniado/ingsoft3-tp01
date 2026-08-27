@@ -1,3 +1,5 @@
+[![CI](https://github.com/Gabriellaniado/ingsoft3-tp01/actions/workflows/ci.yml/badge.svg)](https://github.com/Gabriellaniado/ingsoft3-tp01/actions/workflows/ci.yml)
+
 # Turnero — Sistema de Reservas para Cancha de Fútbol
 ### ingsoft3-tp01 · Versión B
 
