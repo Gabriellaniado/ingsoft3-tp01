@@ -13,11 +13,12 @@ Para que no ocurriera conflicto, cada rama debería haber editado lineas diferen
 
 ## Qué problemas encontraste y cómo los solucionaste
 
-No encontré problemas muy grandes. La guía estaba clara. El único momento en el que tuve que acudir a la IA fue cuando habia que subir las evidencias al .md. Nunca lo habia hecho entonces me fijé como prosguir.
+No encontré problemas muy grandes. La guía estaba clara. La única duda inicial fue la sintaxis de Markdown para enlazar imágenes locales, pero se resolvió rápido consultando a la IA.
 
 ## Declaración de uso de IA
 
 Como dije en el punto anterior, utilice Gemini para consultarle cómo subir las imagenes al MarkDown pero el resto del trabajo fue realizado por mi mismo.
+
 
 
 # Decisiones TP2
@@ -60,7 +61,8 @@ Me costo subir las imagenes al registro, generar el token, ponerlo en la termina
 
 Utilice la IA para que me de los comandos correctos que deberia utilizar. Ademas, iba autocompletando con lo que me sugeria chequeando a la vez el ejemplo de la guia.
 
-La app la hizo completamente la IA, yo le di indicaciones previas de lo que queria que haga y el generó todo. Luego yo fui haciendo pruebas para asegurarme de que todo funcione correctamente.
+La app la hizo completamente la IA, yo le di indicaciones previas de lo que queria que haga, defini algunos adr y condiciones necesarias de cumplimiento y caracteristicas y el generó todo. Luego yo fui haciendo pruebas para asegurarme de que todo funcione correctamente.
+
 
 
 # Decisiones TP3
@@ -78,7 +80,28 @@ Como usuario registrado, quiero poder actualizar mis datos de perfil para manten
 (Criterio de aceptación: Validar que los cambios se persistan correctamente en la base de datos).
 
 ## Problemas encontrados y cómo los resolviste.
-No encontre grandes problemas en la realización de este trabajo.
+No encontre grandes problemas en la realización de este trabajo. El único paso a verificar fue la versión de GitHub CLI para confirmar si podía vincular sub-issues con --add-sub-issue desde la terminal o si debía hacerlo por la web. No pude desde ubuntu descargar la version mas reciente por lo que lo hice desde la web.
 
 ## Declaración de uso de IA
 No utilice IA en este trabajo.
+
+
+
+# Decisiones TP4
+
+## Estructura elegida del pipeline (¿por qué esos jobs? ¿por qué en paralelo?).
+El pipeline divide la ejecución en los jobs build-backend y build-frontend para aislar los entornos según la arquitectura desacoplada de la app. Al correr en paralelo sobre runners limpios, se optimiza el tiempo de feedback reduciendo la duración total al tiempo del job más pesado, ya que no existen dependencias de archivos entre sí.
+
+## Qué cachea tu pipeline (capas: cuáles se reutilizan y cuáles no) y qué pasa si el cache desaparece.
+A través de setup-buildx-action, las capas generadas por Docker se exportan al almacén de GitHub Actions (type=gha). Gracias al orden del Dockerfile, las capas de dependencias se marcan como CACHED y se reutilizan si no hubo cambios, mientras que las de código fuente se invalidan y reconstruyen en cada commit. Si la plataforma borrara el almacén por límite de espacio, el pipeline funcionaría exactamente igual de bien, solo que más lento.
+
+## Por qué el pipeline construye con tu Dockerfile en vez de compilar por su cuenta.
+En lugar de compilar de forma nativa en la máquina virtual, el pipeline ejecuta el Dockerfile de cada servicio. Esto asegura la paridad de entornos (desarrollo, CI y producción) y evita divergencias de versiones de compiladores o entornos de ejecución en el servidor, convirtiendo al workflow en un proceso agnóstico al stack tecnológico.
+
+Asi, siempre sera el mismo artefacto el que pasa por todas las etapas y evitamos hacer el build mas de una vez.
+
+## Problemas encontrados y cómo los resolviste.
+Tuve algunos problemas cuando hacia push de los commits porque la ruta la habia definido mal y porque me olvide de ponerle el constructor para la cache al backend entonces el job del backend tiraba error. Me di cuenta viendo los logs de actions en donde claramente te decia cual era el problema.
+
+## Declaración de uso de IA.
+No use ia para este tp. Solo me ayude de la ia para escribir mejor mis ideas en este archivo de decisiones.md.
