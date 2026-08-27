@@ -61,7 +61,7 @@ Me costo subir las imagenes al registro, generar el token, ponerlo en la termina
 
 Utilice la IA para que me de los comandos correctos que deberia utilizar. Ademas, iba autocompletando con lo que me sugeria chequeando a la vez el ejemplo de la guia.
 
-La app la hizo completamente la IA, yo le di indicaciones previas de lo que queria que haga y el generó todo. Luego yo fui haciendo pruebas para asegurarme de que todo funcione correctamente.
+La app la hizo completamente la IA, yo le di indicaciones previas de lo que queria que haga, defini algunos adr y condiciones necesarias de cumplimiento y caracteristicas y el generó todo. Luego yo fui haciendo pruebas para asegurarme de que todo funcione correctamente.
 
 
 
