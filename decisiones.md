@@ -121,3 +121,138 @@ Tuve algunos problemas cuando hacia push de los commits porque la ruta la habia 
 
 ## Declaración de uso de IA.
 No use ia para este tp. Solo me ayude de la ia para escribir mejor mis ideas en este archivo de decisiones.md.
+
+
+# Decisiones TP5
+
+## Qué lógica elegiste testear y por qué ESA (¿dónde duele un bug en tu app?)
+
+Elegí testear la capa de **servicio de reservas** (`internal/bookings/service.go`), que es donde viven todas las reglas de negocio de la aplicación. Esa capa es el núcleo que decide si una reserva puede crearse o no, si una transición de estado es válida y si un usuario tiene permiso para cancelar.
+
+¿Por qué *esa*? Porque un bug ahí tiene consecuencias directas sobre el negocio:
+- Si falla la validación de horarios (RN#2), un cliente puede reservar a las 2 AM.
+- Si falla el control de solapamiento (RN#1), dos equipos quedan anotados en la misma cancha a la misma hora.
+- Si falla la máquina de estados (RN#4), un turno cancelado podría "resucitar" como confirmado.
+- Si falla la autorización (RN#5), cualquier usuario puede cancelar la reserva de otro.
+
+Los handlers HTTP (`handler.go`) y el repositorio con SQL (`repository.go`) no se testearon: los handlers son cableado fino (parsear JSON y llamar al servicio), y el repositorio habla con PostgreSQL, lo que lo convierte en un test de integración que necesita base de datos real. Para testear el servicio en aislamiento, sus dependencias (`BookingRepository` y `settingsGetter`) se inyectan como interfaces —el patrón estándar de DI en Go— y en los tests se reemplazan por `mockRepo` y `mockSettings` implementados a mano.
+
+En el **frontend** se testean los componentes `Login.tsx` y `BookingCalendar.tsx`: el Login porque tiene la lógica de habilitación del botón que debe respetar reglas de validación de campos, y el BookingCalendar porque consume la API de canchas y debe manejar correctamente el caso en que no haya canchas disponibles.
+
+## Tu umbral de coverage: el número, sobre qué métrica (línea, rama o las dos) y por qué ése — y el número de rama que te da hoy, lo hayas usado o no como umbral.
+
+Elegí un **umbral del 50% sobre statements (sentencias)** para el paquete `internal/bookings/service.go`, que es el único donde vive lógica de negocio testeable de forma unitaria.
+
+**Por qué 50%:**
+- La medición real hoy sobre `service.go` es de **50.7% de statements**.
+- Las funciones con lógica de negocio real tienen cobertura alta: `Create` (84%), `UpdateStatus` (85.7%), `validTransition` (100%). Lo que baja el promedio son funciones de solo delegación (`GetAll`, `GetMyFuture`, `GetAvailability`) que no tienen ramas de decisión propias y cuya cobertura requeriría mocks más complejos o tests de integración.
+- Un umbral de 50% me frena si alguien agrega lógica sin tests, pero no me bloquea por código que intencionalmente dejé fuera de la cuenta. Es un umbral que puedo defender concretamente, no uno puesto "por parecer bien".
+
+**Sobre la métrica de ramas (branch coverage):**
+Go no reporta branch coverage nativamente con `go test -cover` — solo statements. Para obtener branch coverage se necesita el flag experimental `-gcflags="-cover"` o herramientas externas. Hoy el reporte de statements de `service.go` es **50.7%**.
+
+## Qué dejaste afuera de la cuenta de cobertura, backend y frontend, y por qué cada cosa (§2.4)
+
+### Backend (Go)
+
+El umbral se aplica solo sobre `./internal/bookings` con `go test -coverprofile=coverage.out ./internal/bookings`.
+
+Quedaron afuera:
+- **`cmd/server/main.go`**: es el arranque de la aplicación (cablea el router, conecta la base de datos, llama a `http.Listen`). No hay reglas de negocio ahí; si está mal, la app no levanta y te enterás inmediatamente sin necesidad de un test.
+- **`internal/bookings/handler.go`**: los handlers son cableado HTTP fino — parsean JSON del request, llaman al servicio y escriben la respuesta. No tienen decisiones propias; testearlos sería un test de integración que necesita un HTTP server real.
+- **`internal/bookings/repository.go`**: habla con PostgreSQL vía GORM. Testearlo requiere una base de datos real, lo que lo convierte en un test de integración, no unitario.
+- **`internal/bookings/model.go`**: solo structs de datos con tags de GORM y JSON. No hay comportamiento que verificar.
+- **`internal/auth/`, `internal/courts/`, `internal/dashboard/`, `internal/middleware/`, `internal/settings/`, `internal/users/`**: paquetes sin tests por ahora. El umbral se aplica sobre el paquete que tiene lógica testeada (`bookings`), no sobre el total del proyecto con `-coverpkg=./...`.
+
+Excluir eso no es trampa: es medir lo que importa. Si en el futuro se agrega lógica de negocio en otros paquetes, el umbral aplica ahí también.
+
+### Frontend (Vitest + @vitest/coverage-v8)
+
+La cobertura se mide sobre los archivos que los tests importan: `Login.tsx` y `BookingCalendar.tsx`. El resto del frontend queda afuera porque:
+- **`src/api/`**: clientes HTTP puros (axios). Se mockean en los tests, no se testean directamente.
+- **`src/store/AuthContext.tsx`**: contexto de React. Se mockea con `vi.mock`.
+- **`src/components/`**: componentes de UI sin lógica de negocio propia (Sidebar, LoadingSpinner, etc.).
+- **`src/pages/admin/`**: páginas de administración sin tests por ahora.
+- **`main.tsx`**: arranque de la SPA, no tiene comportamiento testeable.
+
+## Por qué coverage alto no garantiza calidad (con TU ejemplo)
+
+En `service.go`, la función `GetAvailability` (línea 103) genera los slots de disponibilidad de una cancha para un día. Si escribiera este test:
+
+```go
+func TestGetAvailability_EjecucionSinAssert(t *testing.T) {
+    svc := newSvc(&mockRepo{})
+    svc.GetAvailability(uuid.New(), "2026-12-01")   // se ejecuta... pero no hay ningún Assert
+}
+```
+
+Ese test llevaría la cobertura de `GetAvailability` del 0% al 100% en statements. El reporte quedaría verde. Pero si la función devolviera slots con horarios incorrectos, o una lista vacía cuando debería tener 14 slots, o si se rompiera el cálculo del número de slots según `SlotDurationMinutes`, **ningún test se pondría en rojo**.
+
+Coverage mide ejecución, no verificación. El test de arriba ejecuta `GetAvailability` sin comprobar nada de lo que devuelve: sube el número y no custodia ninguna regla.
+
+## Tu Pull Request bloqueado: qué check se puso en rojo, en qué métrica (el log lo dice), por qué, y qué escribiste para arreglarlo.
+
+*(Esta sección se completa después de configurar el umbral en el pipeline y ver el PR fallar — ver §3 de la guía.)*
+
+## Si refactorizaste para poder mockear: qué cambiaste y por qué no se podía testear antes
+
+El servicio de reservas ya estaba refactorizado para recibir sus dependencias por inyección de interfaces desde el inicio del TP2. Específicamente:
+
+- `BookingRepository` es una **interfaz** (definida en `repository.go`) que declara los métodos que el servicio necesita de la base de datos. La implementación concreta es `GORMBookingRepository`, que habla con PostgreSQL. El servicio nunca instancia el repositorio: lo recibe en `NewService(repo BookingRepository, ...)`.
+- `settingsGetter` es una **interfaz privada** (definida en `service.go`) que declara un único método `Get()`. La implementación concreta es `GORMSettingsRepository`.
+
+Gracias a eso, en los tests se pasan `mockRepo` y `mockSettings` implementados a mano, sin tocar nada del código de producción. No hubo refactor para este TP porque el diseño ya era testeable.
+
+## Si tu stack no es el de la cátedra (.NET + vitest): qué herramienta usaste para cada fila de la tabla «Tu stack, de un vistazo»
+
+| Lo que tenés que lograr | 🐹 Go (backend) | Vitest (frontend) |
+| :--- | :--- | :--- |
+| **Dónde viven los tests** | Al lado del código, en archivos con el sufijo `_test.go` (mismo paquete con `_test` como sufijo del package name para tests de caja negra) | `src/tests/`, importando los componentes desde `src/pages/` |
+| **Un test parametrizado** | **Table-Driven Tests**: un `slice` de structs recorrido con un `for` y `t.Run(tc.name, func(t *testing.T){...})` | `it.each([...])('nombre $campo', async ({...}) => {...})` de Vitest |
+| **Que la dependencia entre desde afuera** | **Interfaz** pasada como parámetro en `NewService(repo BookingRepository, settingsRepo settingsGetter)` — Go no tiene DI automático, la inyección es manual en el constructor | Props del componente o `vi.mock()` que intercepta la importación del módulo |
+| **Fabricar el doble (mock)** | Implementar la interfaz a mano (`mockRepo` y `mockSettings` como structs que implementan la interfaz) — no se necesita ningún framework | `vi.mock('../api/courts', () => ({...}))` de Vitest intercepta el módulo completo |
+| **Medir la cobertura** | `go test -coverprofile=coverage.out ./internal/bookings` y `go tool cover -func=coverage.out` para el desglose | `npx vitest run --coverage` con `@vitest/coverage-v8` |
+| 🔴 **Un umbral que ROMPE el build** | No es nativo. Se automatiza en el pipeline con un script: `go tool cover -func=coverage.out \| grep total \| awk '{print $3}' \| sed 's/%//'` y se compara el número contra el umbral con `bc` o Python | `coverage.thresholds` en `vite.config.ts` o `vitest.config.ts` |
+| 🔴 **Qué ENTRA en la cuenta** | `go test -coverprofile=coverage.out ./internal/bookings` (solo el paquete con lógica de negocio). Con `-coverpkg=./...` se mide todo y el número se desploma al ~8.7% por incluir handlers y repos sin tests | El `include:` en la config de coverage de Vitest filtra qué archivos entran |
+| **Reporte legible del resultado** | `go tool cover -html=coverage.out -o coverage.html` genera un HTML interactivo con líneas coloreadas por cobertura | Reporte HTML generado por `@vitest/coverage-v8` en `./coverage/` |
+| 🔴 **Que las herramientas de test ENTREN a la etapa de tests del Dockerfile** | El toolchain de Go ya viene incluido en la imagen oficial `FROM golang:X.X-alpine` — no requiere instalar nada extra. `go test` está disponible sin dependencias adicionales | `npm ci` (sin `--omit=dev`) para que `vitest` y `@vitest/coverage-v8` estén disponibles |
+
+## El ejercicio del camino sin cubrir
+
+Al abrir el reporte HTML (`go tool cover -html=coverage.out`) en `service.go`, la **línea 47** aparece coloreada en naranja (rama parcialmente cubierta):
+
+```go
+sett, err := s.settingsRepo.Get()
+if err != nil {                         // ← línea 47: rama "err != nil" no recorrida
+    return nil, errors.New("no se pudo obtener la configuración")
+}
+```
+
+**1. Qué línea es:** Línea 47 de `service.go` — la rama `err != nil` del `if` que maneja el error de `settingsRepo.Get()`.
+
+**2. Qué entrada la recorrería:** Habría que pasar un `mockSettings` que devuelva un error en su método `Get()`:
+
+```go
+type mockSettingsError struct{}
+func (m *mockSettingsError) Get() (*settings.Settings, error) {
+    return nil, errors.New("fallo simulado de configuración")
+}
+```
+
+Y luego: `newSvc_custom(&mockRepo{}, &mockSettingsError{}).Create(req, userID)`
+
+**3. Qué decidí:** No lo agregué por ahora. La rama existe y es alcanzable, pero en la práctica real `settingsRepo.Get()` solo falla si la base de datos está caída — un escenario de infraestructura, no de lógica de negocio. Sin embargo, quedaría pendiente para una futura iteración con una suit más completa. El reporte me lo señaló claramente y entiendo qué input la recorrería.
+
+## Problemas encontrados y cómo los resolviste.
+
+No estaba en la tabla Go, así que la completé (ver tabla «Tu stack, de un vistazo» arriba).
+
+El principal problema fue que `@vitest/coverage-v8` no estaba instalado en el frontend. Al correr `npx vitest run --coverage` el CLI preguntaba interactivamente si instalarlo, lo que bloqueaba el pipeline. La solución fue instalarlo explícitamente como devDependency con `npm install -D @vitest/coverage-v8@^4.1.10` antes de integrar el step en el CI.
+
+También detecté que los tests originales de `BookingCalendar.test.tsx` tenían condicionales defensivos (`if (btn)` / `else`) que hacían que siempre pasaran independientemente del comportamiento real del componente — falsos positivos. Los reescribí para que verifiquen comportamiento concreto observable: que el nombre de la cancha devuelta por el mock aparezca como `<option>` en el `<select>`, y que cuando no hay canchas el componente muestre el mensaje "No hay canchas disponibles" y no renderice el selector.
+
+## Declaración de uso de IA.
+
+Utilicé IA (Antigravity/Gemini) a lo largo de todo el TP para: analizar si los tests cumplían los criterios de la consigna, reformatear los tests al patrón AAA, agregar el test parametrizado Table-Driven en Go y el `it.each` en Vitest, calcular los números de cobertura, reescribir los tests débiles de BookingCalendar, e identificar el camino sin cubrir en el reporte de coverage. Verifiqué cada cambio corriendo los tests localmente y revisando que los resultados fueran coherentes con lo que el código hace.
+
+

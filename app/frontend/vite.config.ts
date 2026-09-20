@@ -13,5 +13,18 @@ export default defineConfig({
     globals: true,
     environment: 'jsdom',
     setupFiles: './src/tests/setup.ts',
+    coverage: {
+      provider: 'v8',
+      // Solo entran en la cuenta los componentes que tienen tests unitarios.
+      // Las páginas de admin, la API layer y el arranque (main.tsx) quedan afuera
+      // porque no tienen lógica de negocio propia testeable de forma unitaria.
+      include: [
+        'src/pages/Login.tsx',
+        'src/pages/client/BookingCalendar.tsx',
+      ],
+      thresholds: {
+        statements: 50,
+      },
+    },
   },
 })
