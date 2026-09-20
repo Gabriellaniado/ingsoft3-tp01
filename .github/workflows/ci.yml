@@ -29,6 +29,61 @@ jobs:
           tags: backend:ci            # el nombre de la imagen (hoy sólo vive dentro del runner)
           cache-from: type=gha,scope=backend
           cache-to: type=gha,mode=max,scope=backend
+      
+      - name: Construir la etapa de tests
+        uses: docker/build-push-action@v7
+        with:
+          context: ./app/backend
+          target: test          # ← se detiene en la etapa de tests, no llega a final
+          load: true            # ← deja la imagen en el Docker local, para poder correrla
+          push: false
+          tags: backend-test:ci
+          cache-from: type=gha,scope=backend-test
+          cache-to: type=gha,mode=max,scope=backend-test
+      
+      - name: Instalar Go en el runner (para generar el reporte)
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: ./app/backend/go.mod
+          cache-dependency-path: ./app/backend/go.sum
+
+      - name: Correr los tests con coverage y verificar umbral (50%)
+        working-directory: ./app/backend
+        run: |
+          go test -v -coverprofile=coverage.out ./internal/bookings 2>&1 | tee test-results.txt
+          # Filtrar solo service.go (lógica de negocio) para el umbral
+          grep -E '^(mode:|turnero/internal/bookings/service\.go)' coverage.out > service_coverage.out
+          COVERAGE=$(go tool cover -func=service_coverage.out | grep total | awk '{gsub(/%/,"",$3); print int($3)}')
+          echo "Cobertura de service.go: ${COVERAGE}%"
+          [ "$COVERAGE" -ge 50 ] || (echo "❌ Cobertura ${COVERAGE}% menor al umbral del 50%" && exit 1)
+
+      - name: Reporte de coverage
+        if: ${{ !cancelled() }}        # ← también cuando los tests fallaron: es la corrida que se entrega
+        working-directory: ./app/backend
+        run: |
+          go tool cover -html=coverage.out -o coverage.html
+          go tool cover -func=coverage.out > coverage-func.txt
+          # Escribir resumen en el Step Summary de GitHub
+          TOTAL=$(go tool cover -func=service_coverage.out | grep total | awk '{print $3}')
+          echo "## 📊 Coverage Report — Backend (Go)" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Archivo | Cobertura |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|" >> $GITHUB_STEP_SUMMARY
+          go tool cover -func=coverage.out | grep -v '0.0%' | while IFS= read -r line; do
+            echo "| $line |" | sed 's/\t/ | /g' >> $GITHUB_STEP_SUMMARY
+          done
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Cobertura lógica de negocio (service.go): ${TOTAL}** (umbral: 50%)" >> $GITHUB_STEP_SUMMARY
+
+      - name: Publicar reporte de coverage
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: coverage-report-backend
+          path: |
+            app/backend/coverage.html
+            app/backend/coverage-func.txt
+            app/backend/test-results.txt
 
   build-frontend:
     runs-on: ubuntu-latest

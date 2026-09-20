@@ -41,4 +41,32 @@ describe('Login — botón Ingresar', () => {
     const btn = screen.getByRole('button', { name: /ingresar/i });
     expect(btn).not.toBeDisabled();
   });
+
+  // Test parametrizado con it.each (Vitest)
+  it.each([
+    { email: '', password: '', expectedDisabled: true, desc: 'ambos campos vacíos' },
+    { email: 'test@ejemplo.com', password: '', expectedDisabled: true, desc: 'solo email completado' },
+    { email: '', password: 'secreto123', expectedDisabled: true, desc: 'solo contraseña completada' },
+    { email: 'test@ejemplo.com', password: 'secreto123', expectedDisabled: false, desc: 'ambos campos completados' },
+  ])(
+    'evalúa habilitación del botón según campos: $desc',
+    async ({ email, password, expectedDisabled }) => {
+      const user = userEvent.setup();
+      renderLogin();
+
+      if (email) {
+        await user.type(screen.getByLabelText(/email/i), email);
+      }
+      if (password) {
+        await user.type(screen.getByLabelText(/contraseña/i), password);
+      }
+
+      const btn = screen.getByRole('button', { name: /ingresar/i });
+      if (expectedDisabled) {
+        expect(btn).toBeDisabled();
+      } else {
+        expect(btn).not.toBeDisabled();
+      }
+    }
+  );
 });

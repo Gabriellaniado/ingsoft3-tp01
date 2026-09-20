@@ -1,5 +1,4 @@
-import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
+import { render, screen, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { vi } from 'vitest';
 
@@ -12,7 +11,7 @@ vi.mock('../store/AuthContext', () => ({
   }),
 }));
 
-// Devuelve 1 cancha para que el selector se renderice
+// Mock que devuelve 1 cancha — el selector debe mostrarla
 vi.mock('../api/courts', () => ({
   getCourts: vi.fn().mockResolvedValue([{ id: 'c1', name: 'Cancha 1', description: '' }]),
 }));
@@ -22,7 +21,6 @@ vi.mock('../api/bookings', () => ({
   createBooking: vi.fn(),
 }));
 
-// Sidebar usa Link; MemoryRouter lo cubre
 vi.mock('../components/Sidebar', () => ({ default: () => <nav data-testid="sidebar" /> }));
 vi.mock('../components/LoadingSpinner', () => ({ default: () => <div>Cargando...</div> }));
 
@@ -36,44 +34,42 @@ function renderCalendar() {
   );
 }
 
-// Test 3: el botón "Confirmar Reserva" está deshabilitado cuando teamName está vacío
-describe('BookingCalendar — botón Confirmar Reserva', () => {
-  it('está deshabilitado si el nombre del equipo está vacío', async () => {
+// Test 3: el selector de cancha aparece con el nombre devuelto por el mock
+// Si getCourts no se llama o el componente no muestra la opción, este test se pone en rojo.
+describe('BookingCalendar — carga inicial', () => {
+  it('muestra la cancha devuelta por el mock de getCourts en el selector', async () => {
+    // Arrange
     renderCalendar();
 
-    // El botón solo se renderiza cuando hay un slot seleccionado.
-    // Lo buscamos de forma condicional: si no aparece, el formulario no se mostró aún.
-    // Forzamos su presencia renderizando el componente mínimo que contiene el botón.
-    const btn = screen.queryByRole('button', { name: /confirmar reserva/i });
-    // Si el botón todavía no está visible (porque no se seleccionó slot),
-    // la condición teamName.trim() === '' lo deshabilita cuando sí aparece.
-    // Este test valida el atributo `disabled` directamente del DOM.
-    if (btn) {
-      expect(btn).toBeDisabled();
-    } else {
-      // El botón no aparece sin slot seleccionado — comportamiento esperado ✅
-      expect(btn).toBeNull();
-    }
-  });
-
-  // Test 4: el input de team-name acepta texto y el atributo disabled desaparece
-  it('el input de nombre de equipo acepta texto ingresado por el usuario', async () => {
-    const user = userEvent.setup();
-    renderCalendar();
-
-    // Esperamos a que se cargue la cancha (useEffect con getCourts)
-    // El selector de cancha debe aparecer en pantalla
+    // Act + Assert
+    // findByRole espera de forma asíncrona a que aparezca el combobox
     const courtSelect = await screen.findByRole('combobox');
     expect(courtSelect).toBeInTheDocument();
 
-    // Si el formulario con el input de equipo está visible, escribimos en él
-    const teamInput = screen.queryByPlaceholderText(/Los Campeones FC/i);
-    if (teamInput) {
-      await user.type(teamInput, 'Los Cracks');
-      expect(teamInput).toHaveValue('Los Cracks');
-    } else {
-      // El input aparece solo luego de seleccionar un slot — flujo correcto ✅
-      expect(teamInput).toBeNull();
-    }
+    // La opción con el nombre de la cancha mockeada debe estar en el DOM
+    await waitFor(() => {
+      expect(screen.getByRole('option', { name: /cancha 1/i })).toBeInTheDocument();
+    });
+  });
+
+  // Test 4 (caso de error / borde): cuando el mock de getCourts devuelve lista vacía,
+  // NO se renderiza el selector y en su lugar aparece el mensaje de error del componente.
+  // Si el componente no maneja el array vacío y rompe, este test se pone en rojo.
+  it('muestra mensaje de error cuando getCourts devuelve lista vacía', async () => {
+    // Arrange
+    const { getCourts } = await import('../api/courts');
+    vi.mocked(getCourts).mockResolvedValueOnce([]);
+
+    renderCalendar();
+
+    // Act + Assert
+    // Esperar a que el spinner desaparezca (loadingCourts=false) y aparezca el mensaje
+    await waitFor(() => {
+      expect(screen.queryByText(/cargando/i)).not.toBeInTheDocument();
+    });
+
+    // Sin canchas el componente muestra este texto y NO el <select>
+    expect(screen.getByText(/no hay canchas disponibles/i)).toBeInTheDocument();
+    expect(screen.queryByRole('combobox')).not.toBeInTheDocument();
   });
 });
