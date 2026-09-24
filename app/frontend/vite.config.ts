@@ -23,7 +23,7 @@ export default defineConfig({
         'src/pages/client/BookingCalendar.tsx',
       ],
       thresholds: {
-        statements: 50,
+        statements: 58,  // medición real hoy: 58.87% — umbral por debajo para no bloquear
       },
     },
   },

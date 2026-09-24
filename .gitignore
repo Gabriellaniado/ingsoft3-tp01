@@ -47,6 +47,11 @@ backend/vendor/
 # Archivos de test temporales
 coverage.txt
 coverage.out
+coverage.html
+service_coverage.out
+test-results.txt
+courts_coverage.out
+bookings_coverage.out
 
 # ==========================================
 # IDEs y Editores
@@ -77,3 +82,5 @@ Thumbs.db
 # (Generalmente no se ignora nada específico salvo volumen local si existiera una carpeta)
 # Si tuvieras una base de datos montada local en una carpeta, iría acá:
 # /pgdata/
+
+TestResults/
