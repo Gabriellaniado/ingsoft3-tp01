@@ -4,8 +4,9 @@ import (
 	"errors"
 	"testing"
 
-	"github.com/google/uuid"
 	"turnero/internal/courts"
+
+	"github.com/google/uuid"
 )
 
 // ---- Mock ----

@@ -15,6 +15,7 @@ export default defineConfig({
     setupFiles: './src/tests/setup.ts',
     coverage: {
       provider: 'v8',
+      reporter: ['text', 'json', 'json-summary', 'html'],
       // Solo entran en la cuenta los componentes que tienen tests unitarios.
       // Las páginas de admin, la API layer y el arranque (main.tsx) quedan afuera
       // porque no tienen lógica de negocio propia testeable de forma unitaria.
@@ -23,7 +24,10 @@ export default defineConfig({
         'src/pages/client/BookingCalendar.tsx',
       ],
       thresholds: {
-        statements: 58,  // medición real hoy: 58.87% — umbral por debajo para no bloquear
+        lines: 80,
+        branches: 80,
+        statements: 80,
+        functions: 80,
       },
     },
   },

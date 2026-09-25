@@ -15,7 +15,7 @@ RUN chmod +x /run_tests.sh
 ENTRYPOINT ["/run_tests.sh"]
 
 # ---- Etapa 3: runtime (imagen mínima, sin compilador) ----
-FROM alpine:latest
+FROM alpine:3.21
 RUN apk --no-cache add ca-certificates tzdata
 WORKDIR /app
 COPY --from=builder /turnero .

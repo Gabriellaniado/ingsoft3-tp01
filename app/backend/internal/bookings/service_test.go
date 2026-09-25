@@ -5,9 +5,10 @@ import (
 	"testing"
 	"time"
 
-	"github.com/google/uuid"
 	"turnero/internal/bookings"
 	"turnero/internal/settings"
+
+	"github.com/google/uuid"
 )
 
 // ---- Mocks ----
@@ -29,8 +30,8 @@ func (m *mockRepo) FindByID(id uuid.UUID) (*bookings.Booking, error) {
 	}
 	return nil, errors.New("not found")
 }
-func (m *mockRepo) FindAll() ([]bookings.Booking, error)                       { return nil, nil }
-func (m *mockRepo) FindMyFuture(uuid.UUID) ([]bookings.Booking, error)         { return nil, nil }
+func (m *mockRepo) FindAll() ([]bookings.Booking, error)                         { return nil, nil }
+func (m *mockRepo) FindMyFuture(uuid.UUID) ([]bookings.Booking, error)           { return nil, nil }
 func (m *mockRepo) FindByCourt(uuid.UUID, time.Time) ([]bookings.Booking, error) { return nil, nil }
 func (m *mockRepo) HasOverlap(uuid.UUID, time.Time, time.Time, *uuid.UUID) (bool, error) {
 	return m.hasOverlap, nil
@@ -315,6 +316,7 @@ func TestUpdateStatus_TransitionsTableDriven(t *testing.T) {
 		})
 	}
 }
+
 // RN #5 valid: el dueño puede cancelar su propia reserva PENDIENTE
 func TestCancelMy_OwnerCanCancel(t *testing.T) {
 	// Arrange

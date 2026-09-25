@@ -70,3 +70,59 @@ describe('Login — botón Ingresar', () => {
     }
   );
 });
+
+describe('Login — envío del formulario', () => {
+  it('envía credenciales, ejecuta login y redirige al dashboard tras login exitoso', async () => {
+    const user = userEvent.setup();
+    const { login: loginApi } = await import('../api/auth');
+    vi.mocked(loginApi).mockResolvedValueOnce({
+      user: { id: 'u1', name: 'Tester', email: 'test@ejemplo.com', role: 'CLIENT', created_at: '', updated_at: '' },
+      token: 'jwt-token-123',
+    });
+
+    renderLogin();
+
+    await user.type(screen.getByLabelText(/email/i), 'test@ejemplo.com');
+    await user.type(screen.getByLabelText(/contraseña/i), 'secreto123');
+
+    const btn = screen.getByRole('button', { name: /ingresar/i });
+    await user.click(btn);
+
+    expect(loginApi).toHaveBeenCalledWith('test@ejemplo.com', 'secreto123');
+  });
+
+  it('muestra mensaje de error cuando la API rechaza las credenciales', async () => {
+    const user = userEvent.setup();
+    const { login: loginApi } = await import('../api/auth');
+    vi.mocked(loginApi).mockRejectedValueOnce({
+      response: { data: { error: 'Credenciales inválidas' } },
+    });
+
+    renderLogin();
+
+    await user.type(screen.getByLabelText(/email/i), 'fail@ejemplo.com');
+    await user.type(screen.getByLabelText(/contraseña/i), 'erronea');
+
+    const btn = screen.getByRole('button', { name: /ingresar/i });
+    await user.click(btn);
+
+    expect(await screen.findByText(/credenciales inválidas/i)).toBeInTheDocument();
+  });
+
+  it('muestra mensaje por defecto ante error inesperado sin respuesta de backend', async () => {
+    const user = userEvent.setup();
+    const { login: loginApi } = await import('../api/auth');
+    vi.mocked(loginApi).mockRejectedValueOnce(new Error('Network failure'));
+
+    renderLogin();
+
+    await user.type(screen.getByLabelText(/email/i), 'fail@ejemplo.com');
+    await user.type(screen.getByLabelText(/contraseña/i), 'erronea');
+
+    const btn = screen.getByRole('button', { name: /ingresar/i });
+    await user.click(btn);
+
+    expect(await screen.findByText(/error al iniciar sesión/i)).toBeInTheDocument();
+  });
+});
+
