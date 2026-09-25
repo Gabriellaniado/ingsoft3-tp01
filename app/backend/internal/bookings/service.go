@@ -5,8 +5,9 @@ import (
 	"fmt"
 	"time"
 
-	"github.com/google/uuid"
 	"turnero/internal/settings"
+
+	"github.com/google/uuid"
 )
 
 // settingsGetter is what the service needs from settings — avoids tight coupling.
@@ -94,10 +95,12 @@ func (s *Service) Create(req CreateRequest, userID uuid.UUID) (*Booking, error) 
 }
 
 // GetAll retorna todas las reservas de la base de datos ordenadas por fecha.
-func (s *Service) GetAll() ([]Booking, error)                        { return s.repo.FindAll() }
+func (s *Service) GetAll() ([]Booking, error) { return s.repo.FindAll() }
 
 // GetMyFuture retorna únicamente las reservas futuras no canceladas del usuario.
-func (s *Service) GetMyFuture(userID uuid.UUID) ([]Booking, error)   { return s.repo.FindMyFuture(userID) }
+func (s *Service) GetMyFuture(userID uuid.UUID) ([]Booking, error) {
+	return s.repo.FindMyFuture(userID)
+}
 
 // GetAvailability returns all time slots for a court+date with availability.
 func (s *Service) GetAvailability(courtID uuid.UUID, dateStr string) ([]TimeSlot, error) {
@@ -178,4 +181,27 @@ func validTransition(from, to string) bool {
 		}
 	}
 	return false
+}
+
+// CalculateCancellationPenalty calcula el porcentaje de penalización por cancelar según la anticipación.
+// RN: Más de 24hs de anticipación -> 0% penalización.
+// Entre 12 y 24hs -> 20% penalización.
+// Menos de 12hs -> 50% penalización.
+// Turno ya iniciado o pasado -> error.
+func (s *Service) CalculateCancellationPenalty(bookingID uuid.UUID, cancelTime time.Time) (float64, error) {
+	b, err := s.repo.FindByID(bookingID)
+	if err != nil {
+		return 0, errors.New("reserva no encontrada")
+	}
+	diff := b.StartTime.Sub(cancelTime)
+	if diff <= 0 {
+		return 100.0, errors.New("no se puede cancelar un turno ya iniciado o pasado")
+	}
+	hours := diff.Hours()
+	if hours >= 24 {
+		return 0.0, nil
+	} else if hours >= 12 {
+		return 20.0, nil
+	}
+	return 50.0, nil
 }
