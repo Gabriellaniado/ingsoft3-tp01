@@ -76,7 +76,7 @@ describe('Login — envío del formulario', () => {
     const user = userEvent.setup();
     const { login: loginApi } = await import('../api/auth');
     vi.mocked(loginApi).mockResolvedValueOnce({
-      user: { id: 'u1', name: 'Tester', email: 'test@ejemplo.com', role: 'CLIENT' },
+      user: { id: 'u1', name: 'Tester', email: 'test@ejemplo.com', role: 'CLIENT', created_at: '', updated_at: '' },
       token: 'jwt-token-123',
     });
 
