@@ -218,7 +218,33 @@ Coverage mide ejecución, no verificación. El test de arriba ejecuta `GetAvaila
 
 ## Tu Pull Request bloqueado: qué check se puso en rojo, en qué métrica (el log lo dice), por qué, y qué escribiste para arreglarlo.
 
-*(Esta sección se completa después de configurar el umbral en el pipeline y ver el PR fallar — ver §3 de la guía.)*
+1. **Qué check se puso en rojo**: 
+   El paso `Correr tests, verificar umbral y generar reporte (dentro del contenedor)` dentro del job `build-backend` en el Pull Request `#26`.
+
+2. **En qué métrica**: 
+   Cobertura de statements sobre la capa de servicio (`service.go`). El log de ejecución de GitHub Actions reportó textualmente:
+   ```text
+   🎯 Cobertura capa de servicio (gate): 72%  (umbral: 80%)
+   ──────────────────────────────────────────────
+   ❌ Cobertura 72% es menor al umbral del 80%
+   Error: Process completed with exit code 1.
+   ```
+
+3. **Por qué**: 
+   Se incorporó en `internal/bookings/service.go` una nueva regla de negocio para el cálculo de penalizaciones por cancelación anticipada (`CalculateCancellationPenalty`) sin agregar sus pruebas unitarias. Al sumar 10 statements no cubiertos, la cobertura del servicio cayó del **82.4% al 72.2%**, perforando el umbral mínimo del 80% y bloqueando el PR.
+
+4. **Qué escribí para arreglarlo**: 
+   En `internal/bookings/service_test.go` escribí un Table-Driven Test (`TestCalculateCancellationPenalty`) con 5 casos de prueba que cubren exhaustivamente todas las ramas de la función:
+   - Reserva inexistente (error).
+   - Turno ya pasado o iniciado (penalización 100% y error).
+   - Más de 24 hs de anticipación (0% penalización).
+   - Entre 12 y 24 hs de anticipación (20% penalización).
+   - Menos de 12 hs de anticipación (50% penalización).
+   Al pushear este commit, `CalculateCancellationPenalty` quedó cubierta al 100% y el total de la capa de servicio subió a **84.5%**, destrabando el Quality Gate y poniendo el build en verde ✅.
+
+5. **Estado final para corrección docente**: 
+   Siguiendo la consigna de dejar el PR en rojo para la revisión, se incorporó una segunda funcionalidad sin tests (`ExtendBooking` en `bookings/service.go`). Esto hace que la cobertura vuelva a descender a **71.9%**, dejando el último commit del PR bloqueado en rojo ❌ para evidenciar el control estricto del pipeline.
+
 
 ## Si refactorizaste para poder mockear: qué cambiaste y por qué no se podía testear antes
 

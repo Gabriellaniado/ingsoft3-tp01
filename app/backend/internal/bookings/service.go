@@ -205,3 +205,34 @@ func (s *Service) CalculateCancellationPenalty(bookingID uuid.UUID, cancelTime t
 	}
 	return 50.0, nil
 }
+
+// ExtendBooking permite extender una reserva existente agregando tiempo al final.
+// RN: Los minutos adicionales deben ser positivos y no superar 120 minutos (2 horas).
+// RN: No se puede extender una reserva cancelada.
+// RN: Verifica que no haya solapamiento en el nuevo período extendido.
+func (s *Service) ExtendBooking(bookingID uuid.UUID, additionalMinutes int) (*Booking, error) {
+	if additionalMinutes <= 0 {
+		return nil, errors.New("los minutos adicionales deben ser mayores a cero")
+	}
+	if additionalMinutes > 120 {
+		return nil, errors.New("no se puede extender más de 120 minutos (2 horas)")
+	}
+	b, err := s.repo.FindByID(bookingID)
+	if err != nil {
+		return nil, errors.New("reserva no encontrada")
+	}
+	if b.Status == StatusCancelled {
+		return nil, errors.New("no se puede extender una reserva cancelada")
+	}
+	newEnd := b.EndTime.Add(time.Duration(additionalMinutes) * time.Minute)
+	overlap, err := s.repo.HasOverlap(b.CourtID, b.EndTime, newEnd, &b.ID)
+	if err != nil {
+		return nil, err
+	}
+	if overlap {
+		return nil, errors.New("no hay disponibilidad para extender el turno en ese horario")
+	}
+	b.EndTime = newEnd
+	return b, s.repo.Update(b)
+}
+
