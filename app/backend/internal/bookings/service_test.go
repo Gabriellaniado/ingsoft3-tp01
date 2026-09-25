@@ -417,3 +417,76 @@ func TestGetAvailability_InvalidDate(t *testing.T) {
 		t.Fatal("expected error for invalid date format")
 	}
 }
+
+// CalculateCancellationPenalty: prueba todas las ramas de cálculo de penalización
+func TestCalculateCancellationPenalty(t *testing.T) {
+	now := time.Date(2026, 10, 1, 10, 0, 0, 0, loc())
+	validID := uuid.New()
+	futureBooking := &bookings.Booking{
+		ID:        validID,
+		StartTime: now.Add(48 * time.Hour),
+	}
+
+	tests := []struct {
+		name        string
+		bookingID   uuid.UUID
+		cancelTime  time.Time
+		expectedPct float64
+		expectError bool
+	}{
+		{
+			name:        "reserva no existe",
+			bookingID:   uuid.New(),
+			cancelTime:  now,
+			expectedPct: 0,
+			expectError: true,
+		},
+		{
+			name:        "turno ya pasado o iniciado",
+			bookingID:   validID,
+			cancelTime:  futureBooking.StartTime.Add(1 * time.Hour),
+			expectedPct: 100.0,
+			expectError: true,
+		},
+		{
+			name:        "mas de 24hs de anticipacion (0% penalizacion)",
+			bookingID:   validID,
+			cancelTime:  futureBooking.StartTime.Add(-30 * time.Hour),
+			expectedPct: 0.0,
+			expectError: false,
+		},
+		{
+			name:        "entre 12 y 24hs de anticipacion (20% penalizacion)",
+			bookingID:   validID,
+			cancelTime:  futureBooking.StartTime.Add(-18 * time.Hour),
+			expectedPct: 20.0,
+			expectError: false,
+		},
+		{
+			name:        "menos de 12hs de anticipacion (50% penalizacion)",
+			bookingID:   validID,
+			cancelTime:  futureBooking.StartTime.Add(-5 * time.Hour),
+			expectedPct: 50.0,
+			expectError: false,
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &mockRepo{items: []*bookings.Booking{futureBooking}}
+			svc := newSvc(repo)
+
+			pct, err := svc.CalculateCancellationPenalty(tc.bookingID, tc.cancelTime)
+			if tc.expectError && err == nil {
+				t.Fatalf("se esperaba error pero no ocurrio")
+			}
+			if !tc.expectError && err != nil {
+				t.Fatalf("no se esperaba error, got %v", err)
+			}
+			if pct != tc.expectedPct {
+				t.Errorf("expected %.1f%%, got %.1f%%", tc.expectedPct, pct)
+			}
+		})
+	}
+}
+
