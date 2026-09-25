@@ -173,11 +173,26 @@ Excluir eso no es trampa: es medir lo que importa. La trampa sería excluir lóg
 
 ### Frontend (Vitest + @vitest/coverage-v8)
 
-La cobertura se mide sobre los archivos declarados en `include` de `vite.config.ts`: `Login.tsx` y `BookingCalendar.tsx`. El umbral es **58% de statements** — distinto al 80% del backend, y la diferencia está justificada:
+La cobertura se mide sobre los archivos declarados en `include` de `vite.config.ts`: `Login.tsx` y `BookingCalendar.tsx`. El umbral está configurado en **80% de líneas y 80% de branches** (alcanzando también el 80% en statements y funciones), igualando el nivel de exigencia del 80% del backend.
 
-- **`Login.tsx` (50%)**: la mitad de sus statements están en el bloque `handleLogin` (la llamada a la API, el manejo del token, la navegación post-login). Testear ese flujo unitariamente requiere mockear `useNavigate`, el contexto de auth y la respuesta HTTP simultaneous — es territorio de test de integración o e2e. Lo que sí se testea unitariamente (la habilitación del botón según los campos) está cubierto al 100%.
-- **`BookingCalendar.tsx` (60.91%)**: el componente tiene más de 200 líneas de renderizado condicional que solo se activa tras secuencias de interacción del usuario: seleccionar una fecha en el calendario, elegir un slot, escribir el nombre del equipo y confirmar. Cubrir esos estados unitariamente requiere montar el componente completo con datos mockeados de slots, simular clicks en celdas del calendario y verificar las transiciones de estado — esto supera el scope de un unit test y pertenece a e2e (TP7). Los statements cubiertos corresponden a la carga inicial y el manejo del caso sin canchas, que sí son testables en aislamiento.
-- **El 58% es el piso, no el techo**: es el número que da la cobertura real hoy sobre el código que tiene sentido testear unitariamente. Ponerlo más alto forçaría a escribir tests que simulan interacción compleja de DOM — test de integración disfrazados de unit tests, que son más fruto de alcanzar un número que de verificar comportamiento.
+Para alcanzar y superar ampliamente este umbral con tests significativos (evitando tests vacíos solo para inflar el número), se implementaron pruebas unitarias de interacción con `@testing-library/react` y `userEvent`:
+
+- **`Login.tsx` (100% líneas, 100% branches, 100% statements)**:
+  - Habilitación dinámica del botón de ingreso según el contenido de los inputs (incluyendo tabla parametrizada con `it.each`).
+  - Envío exitoso del formulario (`handleSubmit`) con mock de `loginApi`, verificando la propagación de datos al contexto de autenticación y la redirección a `/`.
+  - Manejo de error de la API (credenciales inválidas) y errores inesperados de red, comprobando que las alertas de error se rendericen en el DOM.
+- **`BookingCalendar.tsx` (100% líneas, 96.96% branches, 97.7% statements)**:
+  - Carga inicial del selector con las canchas provistas por el mock de `getCourts` y renderizado del estado vacío si la lista viene vacía.
+  - Interacción con el selector de canchas y navegación entre meses (`‹` y `›`).
+  - Selección de fecha en la cuadrícula del calendario y consulta de turnos disponibles mediante `getAvailability` (cubriendo escenarios con turnos, sin turnos y con fallo de red).
+  - Verificación de turnos libres vs ocupados (estos últimos con el botón deshabilitado).
+  - Flujo de confirmación de reserva: selección de turno libre, validación de habilitación del botón según el nombre del equipo, invocación a `createBooking` y mensaje de éxito o feedback ante errores de reserva rechazada.
+- **Cobertura total alcanzada en Frontend**:
+  - **Líneas**: **100%** (umbral: 80% ✅)
+  - **Branches**: **97.33%** (umbral: 80% ✅)
+  - **Statements**: **98.13%** (umbral: 80% ✅)
+  - **Funciones**: **100%** (umbral: 80% ✅)
+
 
 El resto del frontend queda afuera porque:
 - **`src/api/`**: clientes HTTP puros (axios). Se mockean en los tests, no se testean directamente.

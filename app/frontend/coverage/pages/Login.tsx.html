@@ -23,30 +23,30 @@
         <div class='clearfix'>
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">50% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Statements</span>
-                <span class='fraction'>10/20</span>
+                <span class='fraction'>20/20</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">55.55% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Branches</span>
-                <span class='fraction'>5/9</span>
+                <span class='fraction'>9/9</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">75% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Functions</span>
-                <span class='fraction'>3/4</span>
+                <span class='fraction'>4/4</span>
             </div>
         
             
             <div class='fl pad1y space-right2'>
-                <span class="strong">50% </span>
+                <span class="strong">100% </span>
                 <span class="quiet">Lines</span>
-                <span class='fraction'>10/20</span>
+                <span class='fraction'>20/20</span>
             </div>
         
             
@@ -61,7 +61,7 @@
             </div>
         </template>
     </div>
-    <div class='status-line medium'></div>
+    <div class='status-line high'></div>
     <pre><table class="coverage">
 <tr><td class="line-count quiet"><a name='L1'></a><a href='#L1'>1</a>
 <a name='L2'></a><a href='#L2'>2</a>
@@ -142,34 +142,31 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">84x</span>
-<span class="cline-any cline-yes">84x</span>
-<span class="cline-any cline-yes">84x</span>
-<span class="cline-any cline-yes">84x</span>
-<span class="cline-any cline-yes">84x</span>
-<span class="cline-any cline-yes">84x</span>
+<span class="cline-any cline-yes">165x</span>
+<span class="cline-any cline-yes">165x</span>
+<span class="cline-any cline-yes">165x</span>
+<span class="cline-any cline-yes">165x</span>
+<span class="cline-any cline-yes">165x</span>
+<span class="cline-any cline-yes">165x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">84x</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">165x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">3x</span>
+<span class="cline-any cline-yes">1x</span>
+<span class="cline-any cline-yes">1x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
+<span class="cline-any cline-yes">2x</span>
+<span class="cline-any cline-yes">2x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-no">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">84x</span>
+<span class="cline-any cline-yes">3x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">165x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -183,12 +180,15 @@
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">48x</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-neutral">&nbsp;</span>
+<span class="cline-any cline-yes">96x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
-<span class="cline-any cline-yes">30x</span>
+<span class="cline-any cline-yes">54x</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
 <span class="cline-any cline-neutral">&nbsp;</span>
@@ -222,19 +222,19 @@ export default function Login() {
   const navigate = useNavigate();
 &nbsp;
   // Envía las credenciales ingresadas al backend y redirige al usuario tras el login exitoso.
-  const handleSubmit = <span class="fstat-no" title="function not covered" >async (e</span>: React.FormEvent) =&gt; {
-<span class="cstat-no" title="statement not covered" >    e.preventDefault();</span>
-<span class="cstat-no" title="statement not covered" >    setError('');</span>
-<span class="cstat-no" title="statement not covered" >    setLoading(true);</span>
-<span class="cstat-no" title="statement not covered" >    try {</span>
-      const data = <span class="cstat-no" title="statement not covered" >await loginApi(email, password);</span>
-<span class="cstat-no" title="statement not covered" >      login(data.user, data.token);</span>
-<span class="cstat-no" title="statement not covered" >      navigate('/', { replace: true });</span>
+  const handleSubmit = async (e: React.FormEvent) =&gt; {
+    e.preventDefault();
+    setError('');
+    setLoading(true);
+    try {
+      const data = await loginApi(email, password);
+      login(data.user, data.token);
+      navigate('/', { replace: true });
     } catch (err: unknown) {
-      const e = <span class="cstat-no" title="statement not covered" >err as { response?: { data?: { error?: string } } };</span>
-<span class="cstat-no" title="statement not covered" >      setError(e.response?.data?.error ?? 'Error al iniciar sesión');</span>
+      const e = err as { response?: { data?: { error?: string } } };
+      setError(e.response?.data?.error ?? 'Error al iniciar sesión');
     } finally {
-<span class="cstat-no" title="statement not covered" >      setLoading(false);</span>
+      setLoading(false);
     }
   };
 &nbsp;
@@ -249,7 +249,7 @@ export default function Login() {
 &nbsp;
         &lt;h2 className="auth-title"&gt;Iniciar Sesión&lt;/h2&gt;
 &nbsp;
-        {error &amp;&amp; <span class="branch-1 cbranch-no" title="branch not covered" >&lt;div className="alert alert-error"&gt;⚠️ {error}&lt;/div&gt;}</span>
+        {error &amp;&amp; &lt;div className="alert alert-error"&gt;⚠️ {error}&lt;/div&gt;}
 &nbsp;
         &lt;form onSubmit={handleSubmit}&gt;
           &lt;div className="form-group"&gt;
@@ -264,7 +264,7 @@ export default function Login() {
           &lt;/div&gt;
           &lt;button id="login-submit" type="submit" className="btn btn-primary btn-full btn-lg"
             disabled={loading || !email || !password}&gt;
-            {loading ? <span class="branch-0 cbranch-no" title="branch not covered" >'Ingresando...' : '</span>→ Ingresar'}
+            {loading ? 'Ingresando...' : '→ Ingresar'}
           &lt;/button&gt;
         &lt;/form&gt;
 &nbsp;
@@ -286,7 +286,7 @@ export default function Login() {
             <div class='footer quiet pad2 space-top1 center small'>
                 Code coverage generated by
                 <a href="https://istanbul.js.org/" target="_blank" rel="noopener noreferrer">istanbul</a>
-                at 2026-09-20T15:19:10.371Z
+                at 2026-09-25T02:43:15.350Z
             </div>
         <script src="../prettify.js"></script>
         <script>

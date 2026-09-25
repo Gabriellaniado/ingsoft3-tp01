@@ -13,6 +13,7 @@ go tool cover -func=/out/coverage.out | tee /out/coverage-func.txt
 echo "▶ Filtrando solo la capa de servicio para el umbral..."
 grep -E '^(mode:|turnero/internal/bookings/service\.go|turnero/internal/courts/service\.go)' \
     /out/coverage.out > /out/service_coverage.out
+go tool cover -func=/out/service_coverage.out > /out/coverage-service.txt
 
 echo "▶ Generando reporte HTML..."
 go tool cover -html=/out/coverage.out -o /out/coverage.html
