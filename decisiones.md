@@ -400,42 +400,128 @@ Si se publicara igual cuando los tests fallan, "estar en el registry" dejaría d
 
 **Nota**: la garantía aplica a lo que publica el pipeline. Nada impide que alguien suba una imagen a mano con `docker push`; eso lo decide la política del equipo, no la configuración.
 
-## Continuous Delivery vs Continuous Deployment — cuál implementamos
+## Continuous Delivery vs Continuous Deployment — cuál implementé
 
-Implementamos **Continuous Delivery**: cada cambio verificado llega automáticamente a QA, pero el último paso hacia PROD requiere aprobación humana explícita.
+Implementé Continuous Delivery: cada cambio verificado llega automáticamente a QA, pero el último paso hacia PROD requiere aprobación humana explícita.
 
-No implementamos **Continuous Deployment** (sin aprobación) porque la confianza en la cobertura de tests no es suficiente para garantizar que cualquier cambio sea seguro para producción sin revisión. El gate humano compra: timing de negocio, contexto sobre qué cambia, y responsabilidad explícita (queda registrado quién aprobó).
+No implementé Continuous Deployment (sin aprobación), el gate humano compra timing de negocio, contexto sobre qué cambia, y responsabilidad explícita (queda registrado quién aprobó).
 
 ## Diseño de la cadena (needs/if/environments) y alcance de los secrets
 
-_TODO: completar cuando estén creados los environments en GitHub y los jobs de deploy_
+El workflow de CI/CD implementa una cadena de compuertas estructurada en cuatro jobs secuenciales:
+
+```
+build-backend    (sin needs)                            -> compila, corre tests y publica imagen al registry
+build-frontend   (sin needs)                            -> compila, corre tests y publica imagen al registry
+deploy-qa        needs: [build-backend, build-frontend] -> environment: qa (deploy automático a QA + smoke test)
+                 if: solo en rama main
+deploy-prod      needs: deploy-qa                       -> environment: production (pausa esperando aprobación humana + smoke test)
+                 concurrency: deploy-prod
+```
+
+### Decisiones de diseño clave:
+
+1. **Cadena con compuertas (`needs` e `if`)**:
+   - `build-backend` y `build-frontend` corren en paralelo en cada push o pull request.
+   - `deploy-qa` requiere que **ambos** builds hayan terminado en verde (`needs: [build-backend, build-frontend]`). Además, incluye `if: github.ref == 'refs/heads/main'`, garantizando que en un Pull Request la etapa de deploy se saltee automáticamente: los PRs solo verifican, nunca despliegan.
+   - `deploy-prod` depende exclusivamente de `deploy-qa` (`needs: deploy-qa`). **No necesita repetir la condición `if` de la rama**, ya que al depender de un job que solo ejecuta en `main`, en un PR queda automáticamente cancelado/salteado por transitividad.
+
+2. **Aislamiento y alcance de los secrets (`environments`)**:
+   - Los Deploy Hooks de Render no se almacenan como Repository Secrets globales, sino como **Environment Secrets**.
+   - `RENDER_HOOK_API_QA` y `RENDER_HOOK_FRONT_QA` residen en el environment `qa`. Solo los jobs con `environment: qa` tienen acceso a ellos.
+   - `RENDER_HOOK_API_PROD` y `RENDER_HOOK_FRONT_PROD` residen en el environment `production`. Este entorno cuenta con la regla de protección **Required reviewers**, lo que significa que nadie (ni personas ni jobs) puede acceder a estos secretos ni disparar el hook sin una aprobación humana explícita previa.
+
+3. **El parámetro `&ref=$GITHUB_SHA` en el Deploy Hook**:
+   - Render por defecto despliega la punta de la rama si se llama al hook pelado. Usar `"$HOOK&ref=$GITHUB_SHA"` es fundamental para garantizar que Render compile y despliegue **el commit exacto que fue verificado y aprobado**, evitando condiciones de carrera donde múltiples merges seguidos provoquen que una corrida vieja promueva código más nuevo no verificado.
+
+4. **Concurrencia (`concurrency: { group: deploy-prod, cancel-in-progress: false }`)**:
+   - Evita que dos ejecuciones simultáneas hacia producción se pisen entre sí. Se configura `cancel-in-progress: false` para que las corridas no se aborten abruptamente mientras esperan revisión o ejecución.
 
 ## Qué mira el aprobador antes de aprobar (criterios del gate)
 
-_TODO: definir criterios al completar el §3.4_
+El gate humano en Continuous Delivery no es un trámite burocrático; es una compuerta de responsabilidad y criterio operativo. Antes de aprobar la promoción hacia producción, el revisor valida cuatro aspectos:
+
+1. **Estado del entorno de QA**: Comprobar que el job `deploy-qa` haya finalizado en verde con su smoke test exitoso, y opcionalmente verificar en la URL pública de QA (`https://turnero-front-qa.onrender.com`) que la aplicación esté operativa y responda con datos reales.
+2. **Naturaleza del cambio (Diff y Migraciones)**: Revisar qué código se está promoviendo. Si el commit incluye modificaciones estructurales en la base de datos (cambios de esquema, nuevas tablas), verificar que sean compatibles hacia atrás y no rompan la versión actualmente en producción.
+3. **Timing y contexto operativo**: Criterio de negocio sobre el momento del deploy. Evitar promover cambios en horarios de alto tráfico, fines de semana o viernes por la tarde cuando el equipo de guardia o soporte no esté disponible para responder ante incidentes.
+4. **Disponibilidad de plan de contingencia**: Saber con precisión cuál es el commit bueno inmediatamente anterior (`SHA_ANTERIOR`) para ejecutar un rollback rápido en caso de degradación del servicio tras el deploy.
 
 ## Letra chica del free tier (Render + Neon)
 
 - **Render**: 750 horas de instancia por mes **por workspace** (los consumen los cuatro servicios: back y front en QA y PROD). Los servicios duermen tras ~15 min sin tráfico; el cold start puede tardar hasta ~1 min, por eso el smoke test usa reintentos (30 × 20 s). 500 minutos de build por mes — cada deploy reconstruye la app en Render, hasta cuatro builds por promoción completa.
-- **Neon**: cómputo suspendido a los ~5 min idle (se despierta solo, mucho más rápido que Render). Límite de 0.5 GB de almacenamiento. El plan gratuito es permanente (sin expiración de 30 días como el Postgres de Render, por eso se eligió Neon).
+- **Neon vs Postgres de Render**: Se eligió Neon porque el Postgres gratuito de Render **expira a los 30 días** de creado (con 14 días de gracia antes de ser eliminado), lo que no cubre la duración de la materia. Neon ofrece un plan gratuito permanente (0.5 GB de almacenamiento) y cómputo suspendido tras ~5 min de inactividad que se reactiva automáticamente y mucho más rápido que Render.
+- **Cómo comprobé que cada entorno usa su propia base**:
+  Las cadenas de conexión de Neon difieren en una sola palabra (`.../app_qa?...` contra `.../app_prod?...`). Para evitar el error silencioso de que PROD apunte a QA:
+  1. Verifiqué minuciosamente en Render que la variable `DATABASE_URL` de `turnero-api-qa` contenga `/app_qa` y la de `turnero-api-prod` contenga `/app_prod`.
+  2. En el SQL Editor de Neon ejecuté consultas de conteo independientes (`SELECT count(*) FROM users;`) en ambas bases de datos. Los datos creados en un entorno no se comparten ni se reflejan en el otro, garantizando el aislamiento total entre QA y Producción.
 
 ## Qué garantía perdés porque Render reconstruye desde el repo
 
-_TODO: completar cuando el deploy esté funcionando (§3.2)_
+En el §3.0 el pipeline de CI construye, prueba y publica imágenes inmutables en GitHub Packages (`ghcr.io`). Sin embargo, en el §3.2 le configuramos a Render que descargue el código fuente desde el repositorio y ejecute su propio `docker build` en cada despliegue.
+
+**La garantía que se pierde es la inmutabilidad del artefacto verificado («se promueve lo mismo que se verificó»):**
+- Lo que corre en QA y en PROD **no es la misma imagen binaria que los tests aprobaron**, sino una reconstrucción posterior del mismo código fuente.
+- Aunque el commit sea idéntico, dos construcciones en momentos distintos pueden diferir: una imagen base (`golang:alpine` o `nginx:alpine`) que se actualizó con un nuevo parche, dependencias remotas con versiones flotantes, o diferencias en el runtime del constructor.
+- Este compromiso se asume didácticamente en el TP6 para aprender entornos y compuertas de promoción sin complejizar la infraestructura; el **TP7** resuelve esto haciendo que Render deje de compilar y ejecute directamente las imágenes publicadas en `ghcr.io`.
 
 ## Qué prueba el smoke test y qué NO prueba
 
-_TODO: completar cuando el smoke esté implementado (§3.3/§3.4)_
+El smoke test es una verificación rápida y superficial diseñada para responder con certeza: *«¿el entorno levantó y está en condiciones mínimas de atender tráfico?»*.
+
+### Qué prueba:
+1. **Disponibilidad de la API**: Realiza un `curl` a `$URL_API/health` verificando que el proceso del backend en Go esté vivo y responda HTTP 200. En mi aplicación, como el servidor aborta con `log.Fatal` en el inicio si no logra conectarse a la base de datos PostgreSQL en Neon, que `/health` responda confirma además que la base de datos está conectada y las tablas migradas.
+2. **Disponibilidad del Frontend**: Realiza un `curl` a `$URL_FRONT/` confirmando que el servidor Nginx esté activo y entregue el HTML de la Single Page Application (SPA).
+3. **Resistencia a cold starts**: Emplea un bucle de hasta 30 reintentos espaciados cada 20 segundos con `--max-time 10`, tolerando los tiempos de arranque en frío típicos del free tier de Render y Neon sin generar falsos negativos.
+
+### Qué NO prueba (y su limitación honesta):
+1. **Lógica de negocio y flujos de usuario**: No prueba el flujo de login, la autenticación mediante JWT, la visualización de turnos disponibles ni la creación de reservas de canchas.
+2. **Casos de borde y validaciones de datos**: No prueba solapamiento de horarios, penalizaciones por cancelación ni permisos por roles (`Admin` vs `Client`).
+3. **Rendimiento bajo concurrencia**: No prueba latencia bajo carga ni fugas de conexiones hacia la base de datos.
+*(Todos estos puntos son responsabilidad de la suite de tests unitarios y de integración ejecutada previamente en el CI).*
+4. **Limitación honesta (no valida qué versión corre)**: El smoke test verifica que el servicio responda, pero **no garantiza qué versión exacta está corriendo**. Dado que el deploy hook responde de inmediato y Render construye en segundo plano mientras sigue sirviendo la versión previa, si el build tarda o falla, el smoke test podría dar verde contra la versión anterior. En el TP7 esto se mitiga exponiendo el commit en el `/health` para que el smoke valide que el SHA en vivo coincida con `$GITHUB_SHA`.
+
+## Portabilidad: ¿Qué sobrevive si Render desaparece mañana?
+
+Si Render dejara de existir, **prácticamente todo el trabajo realizado en este TP sobrevive intacto**:
+- Todo el pipeline de integración continua (`build-backend`, `build-frontend`) y la suite de tests.
+- Las imágenes Docker inmutables empaquetadas y versionadas en GitHub Container Registry (`ghcr.io`).
+- La configuración de Nginx desacoplada mediante variables de entorno (`default.conf.template`).
+- La cadena de compuertas (`needs`, `if`), la gestión de `environments` (`qa` y `production`) y el gate humano con revisión requerida en GitHub Actions.
+
+Lo único estrictamente acoplado a Render son los dos comandos `curl` que disparan los Deploy Hooks. Migrar a otro proveedor (Railway, Fly.io, AWS o un VPS propio con Docker Compose) requeriría únicamente cambiar el mecanismo de disparo en los jobs de deploy, preservando intacta la arquitectura de Continuous Delivery.
 
 ## Deployment pattern elegido para producción real y plan de rollback
 
 ### Pattern elegido
 
-_TODO: completar al final del TP_
+Para un entorno de producción real, el patrón elegido es **Feature Flags** (desacoplando el *deploy* técnico del *release* de producto, apoyado en la infraestructura básica de reemplazo sin downtime que provee el host):
+
+- **Costo (Económico)**: Es la alternativa más económica. No exige duplicar servidores ni pagar dos infraestructuras completas en paralelo como Blue-Green (que duplica el costo de cómputo durante cada pase), ni requiere balanceadores avanzados con enrutamiento ponderado de tráfico como Canary. Opera sobre la misma infraestructura ya contratada.
+- **Riesgo**: Minimiza el riesgo en producción porque el código nuevo viaja "dormido" (apagado). Permite activar funcionalidades progresivamente: primero para pruebas internas de administradores, luego para un porcentaje reducido de clientes, y finalmente para la totalidad de los usuarios.
+- **Rollback (Inmediato)**: Es el mecanismo de recuperación más rápido de la industria. Si una nueva funcionalidad presenta fallas o degrada la experiencia, el rollback no requiere reconstruir contenedores, revertir commits en Git ni esperar entre 30 y 90 segundos a que el hosting actualice: **se apaga el flag en el panel y en 1 segundo la funcionalidad deja de ejecutarse** sin reiniciar el servidor ni interrumpir las sesiones activas.
+- **Qué observabilidad y herramientas me faltan hoy para ejecutarlo**:
+  1. *Servicio de Flags dinámico*: Falta integrar un gestor de flags externo (como Unleash, LaunchDarkly o una tabla en PostgreSQL con caché en memoria) que permita evaluar reglas por usuario en tiempo de ejecución. Una variable de entorno no sirve para este fin porque requeriría reiniciar o redesplegar el contenedor.
+  2. *Monitoreo y Telemetría por feature*: Hoy solo contamos con el `/health` básico y logs de consola. Para flags se requiere observabilidad (APM / Prometheus / Grafana —que se verá en el TP9—) para medir automáticamente si la activación del flag incrementa los errores 500 o la latencia del backend.
+  3. *Gestión de deuda técnica*: Disciplina del equipo para planificar la limpieza y eliminación de los condicionales (`if flag`) una vez que la funcionalidad quede consolidada en producción.
 
 ### Plan de rollback
 
-_TODO: completar con tiempo medido después de practicar el rollback (§3.5)_
+En caso de detectarse una anomalía en producción tras un deploy aprobado, el procedimiento de rollback consiste en:
+
+1. **Identificar el último commit estable**: Se consulta el historial de despliegues en GitHub (`gh api repos/.../deployments?environment=production`) para obtener el SHA inmediatamente anterior. En la práctica fue: `6d9dafdb3dc73c65ef922c1c2c2537b6aeb7e5e4`.
+2. **Disparar los Deploy Hooks con el commit anterior**:
+   ```bash
+   SHA_ANTERIOR="6d9dafdb3dc73c65ef922c1c2c2537b6aeb7e5e4"
+   curl -fsS "https://api.render.com/deploy/srv-das3njbbc2fs7396s1ng?key=m_Ta37P6NPc&ref=$SHA_ANTERIOR"
+   curl -fsS "https://api.render.com/deploy/srv-das3phu0tbcc73dn74sg?key=N1aOGJ21hz0&ref=$SHA_ANTERIOR"
+   ```
+3. **Tiempo medido en la práctica**:
+   - Se ejecutó el rollback de prueba desde la terminal cronometrando hasta que Render dejó el commit anterior en estado **Live** en producción.
+   - **Tiempo medido: 31 segundos**.
+
+4. **Limitación fundamental del rollback de código**:
+   - El rollback mediante Deploy Hook **solo revierte los contenedores y el código de la aplicación**, pero **NO revierte cambios de esquema en la base de datos**.
+   - Si una versión defectuosa ejecutó una migración destructiva (ej. borrar o renombrar una columna en Neon), volver al código anterior causará fallos inmediatos si ese código intenta consultar la estructura previa. Por esta razón, las migraciones en producción deben ser siempre compatibles hacia atrás (patrón *Expand/Contract*) o acompañadas de un plan de restauración de base de datos (Point-In-Time Recovery).
 
 ## Problemas encontrados y cómo los resolviste
 
@@ -449,4 +535,11 @@ Solución: se reemplazó el `GITHUB_TOKEN` por un PAT (Personal Access Token) co
 
 ## Declaración de uso de IA
 
-Utilicé IA (Antigravity/Gemini) para leer e interpretar la guía del TP6, planificar el orden de los pasos y escribir las secciones de este archivo. Cada cambio en el código fue revisado y entendido antes de aplicarlo. _TODO: actualizar al finalizar el TP._
+Utilicé IA (Antigravity/Gemini) a lo largo de todo el TP6 para:
+
+1. Ajustar el backend en Go para aceptar `DATABASE_URL` y conexión SSL obligatoria requerida por PostgreSQL en Neon, preservando compatibilidad con Docker Compose local.
+2. Ejecutar y cronometrar la práctica de rollback en producción (31s) y redactar las justificaciones técnicas de este documento.
+Cada paso y comando fue revisado, probado y validado en la terminal y en las interfaces de GitHub y Render por mi mismo augurando que las acciones fueran las correctas.
+También investigué por mi cuenta que fuera real el problema del github token y parece que es una falla que suele suceder. Encontré esto:
+
+> **El paquete pertenece a una Cuenta de Usuario (No una Organización)** Si el repositorio y el paquete están bajo tu cuenta personal de usuario (ej. ://github.com...) y estás usando el registro de contenedores GHCR, GitHub tiene una limitación conocida: el GITHUB_TOKEN a veces no puede gestionar paquetes a nivel de usuario con la misma flexibilidad que en una organización. En cuentas personales, la autenticación cruzada suele requerir un PAT de manera obligatoria para la mutación de ciertos paquetes.
