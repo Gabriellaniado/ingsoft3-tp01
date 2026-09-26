@@ -383,8 +383,8 @@ Utilicé IA (Antigravity/Gemini) a lo largo de todo el TP para: analizar si los 
 - **Paquete frontend**: `https://github.com/Gabriellaniado/ingsoft3-tp01/pkgs/container/ingsoft3-tp01-frontend`
 - **Corrida de PR (Entrar al registry salteado)**: https://github.com/Gabriellaniado/ingsoft3-tp01/actions/runs/36268080901
 - **Corrida de main (publicar imagen es el último paso)**: https://github.com/Gabriellaniado/ingsoft3-tp01/actions/runs/36268136883
-- **URL QA**: _TODO: completar cuando esté creado en Render_
-- **URL PROD**: _TODO: completar cuando esté creado en Render_
+- **URL QA**: https://turnero-front-qa.onrender.com (API: https://turnero-api-qa.onrender.com)
+- **URL PROD**: https://turnero-front-prod.onrender.com (API: https://turnero-api-prod.onrender.com)
 
 ---
 
