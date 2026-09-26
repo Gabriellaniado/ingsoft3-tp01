@@ -35,7 +35,7 @@ export default function Login() {
         <div className="auth-logo">
           <span className="auth-logo-icon">⚽</span>
           <h1 className="auth-logo-title">Turnero</h1>
-          <p className="auth-logo-sub">Sistema de Reservas · Cancha de Fútbol</p>
+          <p className="auth-logo-sub">Sistema de Reservas · Cancha de Fútbol (v6.0)</p>
         </div>
 
         <h2 className="auth-title">Iniciar Sesión</h2>
