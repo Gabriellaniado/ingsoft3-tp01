@@ -373,3 +373,80 @@ La desventaja es el overhead del `docker build` + `docker run` vs. un `go test` 
 Utilicé IA (Antigravity/Gemini) a lo largo de todo el TP para: analizar si los tests cumplían los criterios de la consigna, reformatear los tests al patrón AAA, agregar el test parametrizado Table-Driven en Go y el `it.each` en Vitest, calcular los números de cobertura, reescribir los tests débiles de BookingCalendar, e identificar el camino sin cubrir en el reporte de coverage. Verifiqué cada cambio corriendo los tests localmente y revisando que los resultados fueran coherentes con lo que el código hace. También, fui escribiendo este archivo a medida que iba avanzando procurando entender y explicar cada paso que iba haciendo y validandolo con el video.
 
 
+---
+
+# Decisiones TP6
+
+## Enlaces de este TP
+
+- **Paquete backend**: `https://github.com/Gabriellaniado/ingsoft3-tp01/pkgs/container/ingsoft3-tp01-backend`
+- **Paquete frontend**: `https://github.com/Gabriellaniado/ingsoft3-tp01/pkgs/container/ingsoft3-tp01-frontend`
+- **Corrida de PR (Entrar al registry salteado)**: https://github.com/Gabriellaniado/ingsoft3-tp01/actions/runs/36268080901
+- **Corrida de main (publicar imagen es el último paso)**: https://github.com/Gabriellaniado/ingsoft3-tp01/actions/runs/36268136883
+- **URL QA**: _TODO: completar cuando esté creado en Render_
+- **URL PROD**: _TODO: completar cuando esté creado en Render_
+
+---
+
+## Por qué el artefacto se publica sólo con la verificación en verde
+
+El pipeline garantiza esto encadenando tres condiciones, no una:
+
+1. **Nada entra a `main` sin el pipeline en verde** — el branch protection del TP4 bloquea el merge si los checks fallan.
+2. **Sólo lo que entra a `main` se publica** — el paso de publicar tiene `push: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}`. En un PR, `event_name` es `pull_request`, así que el paso construye pero no publica.
+3. **El paso que publica es el ÚLTIMO del job** — los steps de un job corren en orden y se detienen al primer error. Si los tests fallan, el job muere ahí y el paso de publicar nunca llega a correr.
+
+Si se publicara igual cuando los tests fallan, "estar en el registry" dejaría de significar "esto pasó la verificación" y el registry se convertiría en un depósito de imágenes rotas.
+
+**Nota**: la garantía aplica a lo que publica el pipeline. Nada impide que alguien suba una imagen a mano con `docker push`; eso lo decide la política del equipo, no la configuración.
+
+## Continuous Delivery vs Continuous Deployment — cuál implementamos
+
+Implementamos **Continuous Delivery**: cada cambio verificado llega automáticamente a QA, pero el último paso hacia PROD requiere aprobación humana explícita.
+
+No implementamos **Continuous Deployment** (sin aprobación) porque la confianza en la cobertura de tests no es suficiente para garantizar que cualquier cambio sea seguro para producción sin revisión. El gate humano compra: timing de negocio, contexto sobre qué cambia, y responsabilidad explícita (queda registrado quién aprobó).
+
+## Diseño de la cadena (needs/if/environments) y alcance de los secrets
+
+_TODO: completar cuando estén creados los environments en GitHub y los jobs de deploy_
+
+## Qué mira el aprobador antes de aprobar (criterios del gate)
+
+_TODO: definir criterios al completar el §3.4_
+
+## Letra chica del free tier (Render + Neon)
+
+- **Render**: 750 horas de instancia por mes **por workspace** (los consumen los cuatro servicios: back y front en QA y PROD). Los servicios duermen tras ~15 min sin tráfico; el cold start puede tardar hasta ~1 min, por eso el smoke test usa reintentos (30 × 20 s). 500 minutos de build por mes — cada deploy reconstruye la app en Render, hasta cuatro builds por promoción completa.
+- **Neon**: cómputo suspendido a los ~5 min idle (se despierta solo, mucho más rápido que Render). Límite de 0.5 GB de almacenamiento. El plan gratuito es permanente (sin expiración de 30 días como el Postgres de Render, por eso se eligió Neon).
+
+## Qué garantía perdés porque Render reconstruye desde el repo
+
+_TODO: completar cuando el deploy esté funcionando (§3.2)_
+
+## Qué prueba el smoke test y qué NO prueba
+
+_TODO: completar cuando el smoke esté implementado (§3.3/§3.4)_
+
+## Deployment pattern elegido para producción real y plan de rollback
+
+### Pattern elegido
+
+_TODO: completar al final del TP_
+
+### Plan de rollback
+
+_TODO: completar con tiempo medido después de practicar el rollback (§3.5)_
+
+## Problemas encontrados y cómo los resolviste
+
+### GITHUB_TOKEN no podía publicar en ghcr.io
+
+Al intentar publicar las imágenes usando el `GITHUB_TOKEN` con `permissions: packages: write` en el job, el registry devolvía `permission_denied: write_package`. Esto ocurrió a pesar de configurar el repo en Settings → Actions → General → Workflow permissions → "Read and write permissions".
+
+Diagnóstico: el `GITHUB_TOKEN` en algunas configuraciones de cuenta no tiene permiso para crear paquetes en ghcr.io. Los paquetes ya existían de TP2 (docker-compose.registry), pero la primera corrida con el nuevo pipeline falló igualmente.
+
+Solución: se reemplazó el `GITHUB_TOKEN` por un PAT (Personal Access Token) con scope `write:packages`, guardado como secret `GHCR_TOKEN` en el repositorio. El concepto es el mismo: una credencial que el pipeline usa para autenticarse sin quedar en el código. La diferencia con el `GITHUB_TOKEN` es que el PAT requiere manejo manual (creación, rotación), pero resuelve el problema de permisos.
+
+## Declaración de uso de IA
+
+Utilicé IA (Antigravity/Gemini) para leer e interpretar la guía del TP6, planificar el orden de los pasos y escribir las secciones de este archivo. Cada cambio en el código fue revisado y entendido antes de aplicarlo. _TODO: actualizar al finalizar el TP._
