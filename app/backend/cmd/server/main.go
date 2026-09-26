@@ -28,11 +28,17 @@ func main() {
 	_ = godotenv.Load("../.env")
 	_ = godotenv.Load(".env")
 
-	dsn := fmt.Sprintf(
-		"host=%s user=%s password=%s dbname=%s port=%s sslmode=disable TimeZone=America/Argentina/Buenos_Aires",
-		env("DB_HOST", "localhost"), env("DB_USER", "turnero_user"),
-		env("DB_PASSWORD", "password123"), env("DB_NAME", "turnero_db"), env("DB_PORT", "5432"),
-	)
+	var dsn string
+	if dbURL := os.Getenv("DATABASE_URL"); dbURL != "" {
+		dsn = dbURL
+	} else {
+		dsn = fmt.Sprintf(
+			"host=%s user=%s password=%s dbname=%s port=%s sslmode=%s TimeZone=America/Argentina/Buenos_Aires",
+			env("DB_HOST", "localhost"), env("DB_USER", "turnero_user"),
+			env("DB_PASSWORD", "password123"), env("DB_NAME", "turnero_db"), env("DB_PORT", "5432"),
+			env("DB_SSLMODE", "disable"),
+		)
+	}
 
 	// Retry DB connection (important when started with Docker Compose)
 	var db *gorm.DB
