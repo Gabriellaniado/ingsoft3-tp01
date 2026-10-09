@@ -554,7 +554,8 @@ También investigué por mi cuenta que fuera real el problema del github token y
 - **Paquete frontend en ghcr.io**: `https://github.com/Gabriellaniado/ingsoft3-tp01/pkgs/container/ingsoft3-tp01-frontend`
 - **URL QA**: https://turnero-front-qa.onrender.com (API: https://turnero-api-qa.onrender.com)
 - **URL PROD**: https://turnero-front-prod.onrender.com (API: https://turnero-api-prod.onrender.com)
-- **Corrida de evidencia (Integración VERDE + E2E ROJA)**: _TODO: agregar URL de la corrida_
+- **Corrida de evidencia (Integración VERDE + E2E ROJA)**: https://github.com/Gabriellaniado/ingsoft3-tp01/actions/runs/37976056824
+  - Commit que rompió la app: `a96a137`
   - Artefacto de integración: `playwright-report-integracion` (VERDE)
   - Artefacto e2e: `playwright-report-e2e` (ROJO)
 - **Corrida completa en verde posterior (hasta PROD)**: _TODO: agregar URL de la corrida_
@@ -623,18 +624,30 @@ La estrategia de pruebas implementada respeta la **Pirámide de Automatización 
     1. **Ciclo de vida de una entidad (Canchas)**: Login de administrador -> Creación vía `POST /api/courts` -> Verificación de persistencia real en Neon vía `GET /api/courts` -> Baja lógica vía `DELETE /api/courts/:id` -> Comprobación de que ya no figura activa.
     2. **Validación y rechazo en persistencia**: Intento de registrar un usuario con contraseña inválida (< 6 caracteres) devuelve HTTP 400 Bad Request y no genera registros huérfanos.
     3. **Seguridad de endpoints**: Verificación de rechazo con HTTP 401 Unauthorized ante credenciales erróneas y ante peticiones a rutas protegidas sin encabezado `Authorization`.
+       - *¿Por qué la elegí y quién me escribe si se rompe?*: La autenticación y autorización es el perímetro de seguridad del negocio. Si este test falla y la API deja pasar requerimientos no autenticados, me escribe inmediatamente el Oficial de Seguridad o el auditor del sistema reportando una brecha crítica de datos (o peor, un atacante no autenticado manipula reservas y canchas ajenas). Si falla devolviendo 500, ningún usuario puede operar la plataforma.
 - **Cúspide (E2E - Playwright Chromium)**: Pruebas completas que levantan un navegador real interactuando contra la interfaz web desplegada en QA (`turnero-front-qa.onrender.com`).
   - *Pruebas elegidas*:
     1. **Flujo crítico de Administrador**: Acceso a `/login`, ingreso de credenciales válidas, redirección a `/admin/dashboard` y visualización del panel administrativo.
     2. **Validación visual de errores**: Intento de registro con email duplicado (`admin@turnero.com`), validando que la aplicación permanezca en `/register` y renderice el componente visual de alerta con el mensaje devuelto por el servidor.
-    3. **Flujo crítico de Cliente**: Registro de nuevo usuario con datos dinámicos únicos (timestamp), navegación automática a su panel `/dashboard`, validación de bienvenida y posterior cierre de sesión exitoso con redirección a `/login`.
+    3. **Flujo crítico de Cliente (Alta de usuario y sesión)**: Registro de nuevo usuario con datos dinámicos únicos (timestamp), navegación automática a su panel `/dashboard`, validación de bienvenida y posterior cierre de sesión exitoso con redirección a `/login`.
+       - *¿Por qué la elegí y quién me escribe si se rompe?*: Es la puerta de entrada de nuevos clientes al producto. Si el flujo de registro o navegación inicial del cliente se rompe en producción, me escribe de inmediato el Product Owner o el equipo de Marketing: cada usuario que no puede registrarse representa una conversión perdida y abandono directo de la plataforma.
 - **Qué NO puse en E2E y por qué**: No se duplicaron pruebas de validaciones campo por campo, combinatorias exhaustivas de formularios ni casos de error internos de negocio. Las pruebas de navegador son las más lentas de ejecutar (~10s vs ~1s) y las más propensas a fallas por red o renderizado. La cúspide debe limitarse estrictamente a los caminos críticos ("happy paths" y "unhappy paths" clave) que garantizan que el sistema está ensamblado y operativo para los usuarios.
+
+## Límites conocidos de la compuerta de calidad (Qué clase de bugs NO ataja el gate)
+
+Aunque la compuerta `integracion` ➔ `e2e` previene que código roto llegue a producción, existen categorías de defectos que este pipeline **no puede atajar**:
+1. **Condiciones de carrera bajo alta concurrencia**: Los tests corren de forma secuencial con un único usuario/worker. No detectan bloqueos en la base de datos (deadlocks) o problemas de concurrencia que solo aparecen con decenas de reservas simultáneas.
+2. **Defectos visuales y de diseño (CSS / Layout)**: Playwright interactúa con el DOM. Si un botón se desplaza por un error de CSS, queda tapado por una capa invisible o pierde contraste de color haciéndose ilegible para humanos, el test seguirá encontrando el elemento y dando verde falsamente (salvo que se implementen pruebas de regresión visual con screenshots comparativos).
+3. **Incompatibilidad entre navegadores móviles o motores específicos**: El pipeline ejecuta Chromium en Linux. Errores específicos de Safari (WebKit en iOS) o Firefox no son atrapados por este gate.
+4. **Discrepancias de datos o migraciones incompatibles en producción**: El gate valida el código contra el entorno de QA. Si la base de datos de producción posee datos históricos corruptos o restricciones de integridad no presentes en QA, el deploy podría fallar en PROD a pesar del verde en QA.
 
 ## Integración amplia vs estrecha
 
 - **Integración estrecha (narrow integration tests)**: Prueba la interacción entre dos o más módulos de código en un entorno controlado, utilizando dobles de prueba (mocks o stubs) para aislarse de la red, bases de datos o servicios externos. Son rápidas, pero no garantizan que la infraestructura real funcione.
 - **Integración amplia (broad integration tests)**: Ejecuta el software completo desplegado contra su infraestructura y servicios reales de producción/QA.
-- **Enfoque adoptado**: Nuestra suite `e2e/api.spec.ts` implementa **integración amplia**. No utiliza mocks ni bases de datos en memoria (SQLite/H2); apunta a la instancia viva de la API en Render y valida operaciones contra la base de datos PostgreSQL real alojada en Neon. Esto certifica que las variables de entorno, la cadena de conexión SSL, las migraciones de tablas y los permisos de usuario funcionan efectivamente de punta a punta.
+- **Enfoque adoptado y justificación**: La suite `e2e/api.spec.ts` implementa **integración amplia**. No utiliza mocks ni bases de datos en memoria (SQLite/H2); apunta a la instancia viva de la API en Render y valida operaciones contra la base de datos PostgreSQL real alojada en Neon.
+  - **Qué gana**: Certeza real sobre el despliegue de punta a punta. Certifica que las variables de entorno, la cadena de conexión SSL, las migraciones de tablas de PostgreSQL y los permisos de base de datos funcionan efectivamente sin depender de supuestos de un mock.
+  - **Qué pierde**: Mayor tiempo de ejecución que un test en memoria (~7 segundos frente a milisegundos), acoplamiento a la disponibilidad de la red y del hosting en Render/Neon, y la necesidad de gestionar cuidadosamente los datos (usando timestamps para evitar colisiones y realizando bajas lógicas de limpieza).
 
 ## Manejo del cold start en free tier y qué es un test flaky
 
@@ -644,6 +657,16 @@ La estrategia de pruebas implementada respeta la **Pirámide de Automatización 
   2. **Timeouts adaptados en Playwright**: Se configuró `timeout: 60_000` (60s) por test y `expect: { timeout: 15_000 }` en `playwright.config.ts`.
   3. **Reintentos automáticos**: Se configuró `retries: 1` para absorber fluctuaciones transitorias de red o latencia de cold start.
 - **Qué es un test flaky**: Es un test no determinista que, ejecutado sobre el mismo código, a veces pasa y a veces falla sin que medie ningún cambio en el software. Sus causas más frecuentes son condiciones de carrera en el DOM, esperas arbitrarias (`sleep` fijos) en lugar de aserciones asíncronas con auto-waiting (`expect(locator).toBeVisible()`), y dependencia de recursos externos con latencia variable. En Playwright se previenen usando selectores robustos y el mecanismo nativo de auto-espera del motor.
+
+## Problemas encontrados y cómo los resolviste
+
+### Recarga de página indeseada en el formulario de Login
+- **Diagnóstico**: Al intentar probar el flujo de error de login, el componente React no mostraba el mensaje de alerta (`.alert.alert-error`). Se descubrió que el interceptor de respuestas de Axios en `app/frontend/src/api/client.ts` contenía `if (error.response?.status === 401) window.location.href = '/login'`. Cuando la API devolvía 401 por credenciales incorrectas, el navegador realizaba un reload completo forzado a `/login`, destruyendo el estado de React y limpiando el mensaje de error.
+- **Solución**: Se condicionó el interceptor para no recargar la página si la petición que arrojó 401 se dirigía al endpoint de login (`!error.config?.url?.includes('/auth/login')`), permitiendo que el bloque `catch` maneje el estado de error localmente en la interfaz.
+
+### Versiones inexistentes de GitHub Actions en la guía (`@v6`)
+- **Diagnóstico**: La plantilla de la cátedra sugería `uses: actions/setup-node@v6` y `uses: actions/upload-artifact@v6`. Ambas acciones no existen en el registro público de GitHub Actions (las versiones vigentes compatibles son `@v4`).
+- **Solución**: Se fijaron en `@v4` (`actions/setup-node@v4` y `actions/upload-artifact@v4`), evitando fallas de resolución de paquetes durante la ejecución en los runners de GitHub.
 
 ## Declaración de uso de IA
 
