@@ -543,3 +543,97 @@ Cada paso y comando fue revisado, probado y validado en la terminal y en las int
 También investigué por mi cuenta que fuera real el problema del github token y parece que es una falla que suele suceder. Encontré esto:
 
 > **El paquete pertenece a una Cuenta de Usuario (No una Organización)** Si el repositorio y el paquete están bajo tu cuenta personal de usuario (ej. ://github.com...) y estás usando el registro de contenedores GHCR, GitHub tiene una limitación conocida: el GITHUB_TOKEN a veces no puede gestionar paquetes a nivel de usuario con la misma flexibilidad que en una organización. En cuentas personales, la autenticación cruzada suele requerir un PAT de manera obligatoria para la mutación de ciertos paquetes.
+
+---
+
+# Decisiones TP7
+
+## Enlaces del TP7
+
+- **Paquete backend en ghcr.io**: `https://github.com/Gabriellaniado/ingsoft3-tp01/pkgs/container/ingsoft3-tp01-backend`
+- **Paquete frontend en ghcr.io**: `https://github.com/Gabriellaniado/ingsoft3-tp01/pkgs/container/ingsoft3-tp01-frontend`
+- **URL QA**: https://turnero-front-qa.onrender.com (API: https://turnero-api-qa.onrender.com)
+- **URL PROD**: https://turnero-front-prod.onrender.com (API: https://turnero-api-prod.onrender.com)
+- **Corrida de evidencia (Integración VERDE + E2E ROJA)**: _TODO: agregar URL de la corrida_
+  - Artefacto de integración: `playwright-report-integracion` (VERDE)
+  - Artefacto e2e: `playwright-report-e2e` (ROJO)
+- **Corrida completa en verde posterior (hasta PROD)**: _TODO: agregar URL de la corrida_
+
+---
+
+## Build once, deploy many: qué problema del TP6 resuelve la imagen como unidad
+
+En el TP6 el pipeline construía y publicaba imágenes en `ghcr.io`, pero Render estaba configurado para descargar el código fuente y reconstruir la aplicación en cada deploy (`docker build`). Esto rompía el principio fundamental de *promover exactamente lo que se verificó*: lo que corría en QA y en PROD no era la imagen verificada en CI, sino construcciones independientes a partir del commit. Dos builds en momentos distintos pueden diferir por actualizaciones en imágenes base (ej. parches de `golang:alpine` o `nginx:alpine`) o dependencias remotas.
+
+En el TP7 se implementa **Build once, deploy many**:
+- El pipeline compila y empaqueta la aplicación **una sola vez** en la etapa de CI.
+- Publica la imagen inmutable en `ghcr.io` con la etiqueta `sha-<commit>`.
+- Los entornos de QA y PROD dejan de compilar código y pasan a **ejecutar exactamente esa misma imagen binaria**.
+- La promoción consiste en ordenarle a Render que ejecute esa imagen mediante el parámetro `imgURL` en el deploy hook, garantizando reproducibilidad absoluta entre entornos.
+
+## Estrategia de etiquetas (sha-<commit> vs v7.0.0 vs por qué no latest)
+
+- **`sha-<commit>` en el registry**: Cada imagen publicada lleva como etiqueta los 40 caracteres del commit exacto de `main` que pasó la verificación. Esto asegura trazabilidad bidireccional inmediata (de la imagen se llega al commit, y del commit a la imagen) y evita que una imagen pise a otra.
+- **Por qué NO publicar `latest`**: `latest` es un puntero mutable que cambia con cada publicación. Desplegar `latest` a producción destruye la trazabilidad porque imposibilita determinar qué versión exacta del código se está ejecutando. En este proyecto no existe `latest`: cada imagen tiene un identificador unívoco.
+- **`v7.0.0` en Git**: El tag de git no etiqueta código al azar ni la punta de la rama, sino el commit específico que fue promovido y verificado en producción al concluir el práctico.
+- **Cómo llegás de la release a la imagen (en un paso)**: Desde el tag de Git se obtiene el commit con `git rev-list -n1 v7.0.0`, y ese mismo SHA es la etiqueta exacta `sha-<commit>` en ambos paquetes en GitHub Packages (`ghcr.io`).
+
+## Configuración de Render con Existing Image
+
+Para migrar los 4 servicios de Render a *Image-backed*:
+- **Se modificó la fuente existente** (*Settings → Build/Source: Edit → Existing Image*) en lugar de crear nuevos servicios. Esto permitió preservar intactas las URLs públicas, las variables de entorno (`DATABASE_URL`, `BACKEND_URL`) y los secretos de los Deploy Hooks en GitHub.
+- **La imagen configurada en Settings vs la que corre en producción**: En Render, la URL de imagen configurada en la interfaz web fue únicamente el punto de partida inicial (`sha-e00130e...`). Lo que efectivamente corre en cada entorno lo determina dinámicamente el pipeline en cada corrida mediante el parámetro `imgURL` en el Deploy Hook.
+
+## Cómo se comprueba desde afuera que el entorno ejecuta la imagen (y qué no prueba el smoke)
+
+- **Comprobación fehaciente**: En el panel de Render, en la pestaña **Events** de cada servicio, los despliegues figuran explícitamente como:
+  `Deploy live for ghcr.io/gabriellaniado/ingsoft3-tp01-...:sha-<commit> · Triggered via Deploy Hook`
+  Esto demuestra que el entorno descargó y levantó la imagen del registry sin reconstruir código desde Git.
+- **Limitación del smoke test**: El smoke test verifica que la aplicación responda HTTP 200 en `/health` y `/`, pero no inspecciona qué versión de imagen está ejecutando. Si un deploy fallara en Render, el contenedor previo seguiría atendiendo tráfico y el smoke daría verde falsamente.
+
+## Cómo la misma imagen del front sirve en QA y en PROD
+
+La Single Page Application (SPA) construida con Vite genera archivos estáticos (HTML, JS, CSS) inmutables dentro de la imagen Docker basada en Nginx.
+Para que esa misma imagen funcione tanto en QA como en PROD sin recompilar:
+- Se utiliza la plantilla `default.conf.template` en `/etc/nginx/templates/`.
+- Al arrancar el contenedor, Nginx sustituye `${BACKEND_URL}` y `${DNS_RESOLVER}` con los valores provistos por las variables de entorno de Render para ese entorno específico (`https://turnero-api-qa.onrender.com` en QA y `https://turnero-api-prod.onrender.com` en PROD).
+- De este modo, el frontend empaquetado es idéntico e inmutable, y su comportamiento se adapta por configuración externa.
+
+## Suites de integración y E2E: qué pruebas elegí y qué NO puse (la pirámide)
+
+La estrategia de pruebas implementada respeta la **Pirámide de Automatización de Pruebas** (Mike Cohn):
+- **Base (Unitarias - Vitest y Go `testing`)**: Pruebas rápidas, aisladas y deterministas en memoria que cubren exhaustivamente las ramas condicionales de la lógica de negocio (17 tests en frontend y cobertura >= 80% en backend).
+- **Capa Media (Integración - Playwright `request`)**: Pruebas sin navegador que validan la interacción real de la API contra la base de datos PostgreSQL en Neon.
+  - *Pruebas elegidas*:
+    1. **Ciclo de vida de una entidad (Canchas)**: Login de administrador -> Creación vía `POST /api/courts` -> Verificación de persistencia real en Neon vía `GET /api/courts` -> Baja lógica vía `DELETE /api/courts/:id` -> Comprobación de que ya no figura activa.
+    2. **Validación y rechazo en persistencia**: Intento de registrar un usuario con contraseña inválida (< 6 caracteres) devuelve HTTP 400 Bad Request y no genera registros huérfanos.
+    3. **Seguridad de endpoints**: Verificación de rechazo con HTTP 401 Unauthorized ante credenciales erróneas y ante peticiones a rutas protegidas sin encabezado `Authorization`.
+- **Cúspide (E2E - Playwright Chromium)**: Pruebas completas que levantan un navegador real interactuando contra la interfaz web desplegada en QA (`turnero-front-qa.onrender.com`).
+  - *Pruebas elegidas*:
+    1. **Flujo crítico de Administrador**: Acceso a `/login`, ingreso de credenciales válidas, redirección a `/admin/dashboard` y visualización del panel administrativo.
+    2. **Validación visual de errores**: Intento de registro con email duplicado (`admin@turnero.com`), validando que la aplicación permanezca en `/register` y renderice el componente visual de alerta con el mensaje devuelto por el servidor.
+    3. **Flujo crítico de Cliente**: Registro de nuevo usuario con datos dinámicos únicos (timestamp), navegación automática a su panel `/dashboard`, validación de bienvenida y posterior cierre de sesión exitoso con redirección a `/login`.
+- **Qué NO puse en E2E y por qué**: No se duplicaron pruebas de validaciones campo por campo, combinatorias exhaustivas de formularios ni casos de error internos de negocio. Las pruebas de navegador son las más lentas de ejecutar (~10s vs ~1s) y las más propensas a fallas por red o renderizado. La cúspide debe limitarse estrictamente a los caminos críticos ("happy paths" y "unhappy paths" clave) que garantizan que el sistema está ensamblado y operativo para los usuarios.
+
+## Integración amplia vs estrecha
+
+- **Integración estrecha (narrow integration tests)**: Prueba la interacción entre dos o más módulos de código en un entorno controlado, utilizando dobles de prueba (mocks o stubs) para aislarse de la red, bases de datos o servicios externos. Son rápidas, pero no garantizan que la infraestructura real funcione.
+- **Integración amplia (broad integration tests)**: Ejecuta el software completo desplegado contra su infraestructura y servicios reales de producción/QA.
+- **Enfoque adoptado**: Nuestra suite `e2e/api.spec.ts` implementa **integración amplia**. No utiliza mocks ni bases de datos en memoria (SQLite/H2); apunta a la instancia viva de la API en Render y valida operaciones contra la base de datos PostgreSQL real alojada en Neon. Esto certifica que las variables de entorno, la cadena de conexión SSL, las migraciones de tablas y los permisos de usuario funcionan efectivamente de punta a punta.
+
+## Manejo del cold start en free tier y qué es un test flaky
+
+- **El problema del cold start**: En el plan gratuito de Render, las instancias web se suspenden tras 15 minutos de inactividad. El primer requerimiento puede demorar entre 30 y 60 segundos mientras el contenedor se aprovisiona y arranca. Si los tests disparan aserciones con timeouts estándar (5 segundos), fallarían falsamente por demoras de arranque del hosting.
+- **Estrategia de mitigación aplicada**:
+  1. **Smoke test previo en CI**: El job `deploy-qa` ejecuta un bucle activo de hasta 10 minutos (30 intentos de 20s) haciendo ping a `/health` y `/` hasta confirmar que los servicios están activos antes de disparar los jobs de prueba.
+  2. **Timeouts adaptados en Playwright**: Se configuró `timeout: 60_000` (60s) por test y `expect: { timeout: 15_000 }` en `playwright.config.ts`.
+  3. **Reintentos automáticos**: Se configuró `retries: 1` para absorber fluctuaciones transitorias de red o latencia de cold start.
+- **Qué es un test flaky**: Es un test no determinista que, ejecutado sobre el mismo código, a veces pasa y a veces falla sin que medie ningún cambio en el software. Sus causas más frecuentes son condiciones de carrera en el DOM, esperas arbitrarias (`sleep` fijos) en lugar de aserciones asíncronas con auto-waiting (`expect(locator).toBeVisible()`), y dependencia de recursos externos con latencia variable. En Playwright se previenen usando selectores robustos y el mecanismo nativo de auto-espera del motor.
+
+## Declaración de uso de IA
+
+Utilicé IA (Antigravity/Gemini) en el TP7 para:
+1. Diseñar y codificar las suites de pruebas con Playwright: la suite de integración de API (`api.spec.ts`) y la suite End-to-End con Chromium (`turnero.spec.ts`), configurando el proyecto dividido en `playwright.config.ts`.
+2. Diagnosticar la recarga prematura de página producida por el interceptor de Axios 401 en el login y corregir el comportamiento en `client.ts`.
+3. Configurar la secuencia de compuertas en GitHub Actions (`deploy-qa` ➔ `integracion` ➔ `e2e` ➔ `deploy-prod`) y la publicación de artefactos HTML de Playwright.
+Cada paso, comando, prueba local y cambio de código fue revisado, probado y validado en la terminal y en los servicios de Render antes de su integración.

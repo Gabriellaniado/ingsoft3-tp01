@@ -84,3 +84,13 @@ Thumbs.db
 # /pgdata/
 
 TestResults/
+
+# ==========================================
+# Playwright (E2E & Integracion)
+# ==========================================
+playwright-report/
+test-results/
+frontend/playwright-report/
+frontend/test-results/
+app/frontend/playwright-report/
+app/frontend/test-results/

@@ -197,9 +197,79 @@ jobs:
           done
           echo "❌ QA no respondió a tiempo"; exit 1
 
-  deploy-prod:
+  integracion:
     runs-on: ubuntu-latest
     needs: deploy-qa
+    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 15
+    steps:
+      - name: Bajar el código al runner
+        uses: actions/checkout@v6
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: app/frontend/package-lock.json
+
+      - name: Instalar dependencias del frontend (sin browser)
+        run: npm ci
+        working-directory: ./app/frontend
+
+      - name: Correr suite de integracion contra QA API (Playwright request sin browser)
+        run: npx playwright test e2e/api.spec.ts --project=integracion
+        working-directory: ./app/frontend
+        env:
+          API_BASE_URL: https://turnero-api-qa.onrender.com
+
+      - name: Publicar reporte de integracion
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-integracion
+          path: app/frontend/playwright-report/
+          retention-days: 7
+
+  e2e:
+    runs-on: ubuntu-latest
+    needs: integracion
+    if: github.ref == 'refs/heads/main'
+    timeout-minutes: 20
+    steps:
+      - name: Bajar el código al runner
+        uses: actions/checkout@v6
+
+      - name: Configurar Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: 'npm'
+          cache-dependency-path: app/frontend/package-lock.json
+
+      - name: Instalar dependencias del frontend y Chromium
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+        working-directory: ./app/frontend
+
+      - name: Correr suite E2E contra QA Frontend (Playwright Chromium)
+        run: npx playwright test e2e/turnero.spec.ts --project=e2e
+        working-directory: ./app/frontend
+        env:
+          E2E_BASE_URL: https://turnero-front-qa.onrender.com
+
+      - name: Publicar reporte E2E
+        uses: actions/upload-artifact@v4
+        if: ${{ !cancelled() }}
+        with:
+          name: playwright-report-e2e
+          path: app/frontend/playwright-report/
+          retention-days: 7
+
+  deploy-prod:
+    runs-on: ubuntu-latest
+    needs: e2e
     if: github.ref == 'refs/heads/main'
     environment: production
     concurrency:
