@@ -94,3 +94,7 @@ frontend/playwright-report/
 frontend/test-results/
 app/frontend/playwright-report/
 app/frontend/test-results/
+reporte-rojo/
+reporte-verde/
+app/frontend/reporte-rojo/
+app/frontend/reporte-verde/
