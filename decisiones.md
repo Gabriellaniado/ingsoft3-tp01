@@ -559,6 +559,21 @@ También investigué por mi cuenta que fuera real el problema del github token y
   - Artefacto e2e: `playwright-report-e2e` (ROJO)
 - **Corrida completa en verde posterior (hasta PROD)**: _TODO: agregar URL de la corrida_
 
+### Diagnóstico de la falla deliberada (Fila 1 de la tabla de §2.5)
+
+- **Rotura introducida en `feature/alta-rota`**: En `app/frontend/src/pages/Register.tsx`, se modificó el atributo `id` del botón de creación de cuenta:
+  ```diff
+  - <button id="register-submit" type="submit" ...>
+  + <button id="btn-crear-cuenta" type="submit" ...>
+  ```
+- **Lectura del par Verde / Rojo**:
+  1. `build-backend` y `build-frontend`: **VERDES** (los unit tests de Vitest no cubren `Register.tsx` y TypeScript compila sin errores).
+  2. `deploy-qa`: **VERDE** (la imagen del commit se despliega en Render QA y el smoke test responde HTTP 200).
+  3. `integracion`: **VERDE** (las pruebas contra la API en Go y la base PostgreSQL en Neon persisten y validan entidades directamente sin usar el frontend).
+  4. `e2e`: **ROJO 🔴** (la prueba en Chromium falla al no encontrar el selector `#register-submit` tras expirar los reintentos).
+  5. `deploy-prod`: **BLOQUEADO ⏹️** (la compuerta de calidad impide la promoción a producción protegiendo a los usuarios finales).
+  - *Conclusión diagnóstica*: Al estar la integración verde y la e2e roja, se determina sin necesidad de abrir el código que la API y la base de datos están completamente sanas, y que la falla radica exclusivamente en el uso de la interfaz en el frontend.
+
 ---
 
 ## Build once, deploy many: qué problema del TP6 resuelve la imagen como unidad

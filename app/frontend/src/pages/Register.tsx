@@ -59,7 +59,7 @@ export default function Register() {
             <input id="reg-password" type="password" className="form-input" placeholder="••••••"
               value={password} onChange={e => setPassword(e.target.value)} required minLength={6} />
           </div>
-          <button id="register-submit" type="submit" className="btn btn-primary btn-full btn-lg"
+          <button id="btn-crear-cuenta" type="submit" className="btn btn-primary btn-full btn-lg"
             disabled={loading || !name || !email || password.length < 6}>
             {loading ? 'Creando cuenta...' : '→ Crear Cuenta'}
           </button>
