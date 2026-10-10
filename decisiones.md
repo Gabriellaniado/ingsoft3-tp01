@@ -558,7 +558,7 @@ También investigué por mi cuenta que fuera real el problema del github token y
   - Commit que rompió la app: `a96a137`
   - Artefacto de integración: `playwright-report-integracion` (VERDE)
   - Artefacto e2e: `playwright-report-e2e` (ROJO)
-- **Corrida completa en verde posterior (hasta PROD)**: _TODO: agregar URL de la corrida_
+- **Corrida completa en verde posterior (hasta PROD)**: https://github.com/Gabriellaniado/ingsoft3-tp01/actions/runs/37993687166
 
 ### Diagnóstico de la falla deliberada (Fila 1 de la tabla de §2.5)
 
