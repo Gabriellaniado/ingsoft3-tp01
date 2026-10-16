@@ -675,3 +675,57 @@ Utilicé IA (Antigravity/Gemini) en el TP7 para:
 2. Diagnosticar la recarga prematura de página producida por el interceptor de Axios 401 en el login y corregir el comportamiento en `client.ts`.
 3. Configurar la secuencia de compuertas en GitHub Actions (`deploy-qa` ➔ `integracion` ➔ `e2e` ➔ `deploy-prod`) y la publicación de artefactos HTML de Playwright.
 Cada paso, comando, prueba local y cambio de código fue revisado, probado y validado en la terminal y en los servicios de Render antes de su integración.
+
+# Decisiones TP8
+
+## Riel elegido y versiones de providers fijadas
+
+- **Riel seleccionado**: Terraform + Neon + Render (infraestructura como código en nube pública).
+- **Herramienta**: Terraform v1.16.6 (`required_version = ">= 1.5"`).
+- **Providers fijados**:
+  - `kislerdm/neon`: Versión `0.18.0`.
+  - `render-oss/render`: Versión `1.9.1`.
+- **Fijación de dependencias**: Ambas versiones fueron declaradas explícitamente en el bloque `required_providers` dentro de `infra/main.tf`. La inicialización con `terraform init` generó el archivo `.terraform.lock.hcl`, el cual congela los hashes criptográficos y versiones exactas de los binarios para garantizar reproducibilidad e inmutabilidad en cualquier máquina o runner de CI.
+
+## Decisiones de diseño de infraestructura y particularidades de la app
+
+- **Derivación dinámica de conexiones sin copy-paste**: 
+  - Para el backend en Go, se conformó dinámicamente la variable `DATABASE_URL` en formato URL de PostgreSQL:
+    `postgres://${neon_role.preprod.name}:${neon_role.preprod.password}@${neon_project.preprod.database_host}/${neon_database.preprod.name}?sslmode=require`
+    Esto garantiza que el servicio de API se conecte exclusivamente a su propia base de preprod sin riesgo de colisión con QA o Producción.
+  - Para el frontend en Nginx, la variable `BACKEND_URL` se deriva directamente del atributo `render_web_service.api.url` utilizando la función `trimsuffix(..., "/")` para asegurar que no contenga una barra final que rompa el proxy inverso de Nginx (`default.conf.template`).
+- **Inmutabilidad de imágenes**: El entorno preprod ejecuta exactamente los artefactos Docker construidos y validados por el pipeline del TP7 (`sha-b0a3b1f04b8eb892bfff0923df51ded64f5f6a14`), asegurando consistencia entre lo probado y lo desplegado.
+- **Entorno preprod efímero vs QA/PROD artesanales**: Los entornos de QA y Producción creados en los prácticos anteriores permanecen intactos y no son gestionados ni importados por Terraform. Preprod nace y muere como un entorno desechable sin afectar los servicios productivos.
+
+## Higiene de secretos y aislamiento del estado
+
+- **Separación de credenciales**: Ninguna clave de acceso ni identificador privado está escrito en el código HCL. Las credenciales de Neon (`NEON_API_KEY`) y Render (`RENDER_API_KEY`, `RENDER_OWNER_ID`) se suministran mediante variables de entorno en la terminal o mediante el archivo local `infra/.env`.
+- **Protección del estado (`terraform.tfstate`)**: Al inspeccionar el archivo de estado tras el primer `apply`, se verificó que Terraform almacena en texto plano atributos sensibles generados por el proveedor (como la contraseña generada para `app_preprod_owner`). Por esta razón, el archivo [.gitignore](.gitignore) fue configurado antes de ejecutar cualquier comando para ignorar `*.tfstate`, `*.tfstate.*`, `.terraform/` y `*.tfvars`, impidiendo fugas de secretos en el historial de Git.
+
+## Problemas encontrados y cómo se resolvieron
+
+### Requerimiento de `org_id` en Neon (`HTTP 400: org_id is required`)
+- **Diagnóstico**: Al ejecutar el primer `terraform apply` sobre el recurso `neon_project.preprod`, la API de Neon rechazó la solicitud con error `HTTP 400: org_id is required, you can find it on your organization settings page`. Esto ocurre porque Neon actualizó recientemente (2024–2025) las políticas de su API para cuentas agrupadas bajo Organizations/Workspaces de equipo, requiriendo especificar obligatoriamente la organización destino al crear un proyecto por API.
+- **Solución**: Se inspeccionó el esquema de atributos del proveedor `kislerdm/neon` con `terraform providers schema -json`, confirmando que el recurso `neon_project` soporta el atributo `org_id`. Se obtuvo el identificador del workspace desde la consola de Neon (`org-shiny-grass-50551164`), se declaró la variable `neon_org_id` en `infra/variables.tf` y se asignó en `neon_project` en `infra/main.tf`, permitiendo que la creación se complete con éxito.
+
+### Identificación de `RENDER_OWNER_ID` (`invalid ownerID`)
+- **Diagnóstico**: Durante el aprovisionamiento de `render_web_service.api`, la API de Render devolvió `invalid ownerID: usr-... valid owner IDs can be found using the /v1/owners API`. Esto sucede cuando el ID copiado difiere del identificador asignado por Render al workspace/usuario correspondiente a la clave de API.
+- **Solución**: Se consultó la API oficial de Render mediante `curl -s -H "Authorization: Bearer $RENDER_API_KEY" https://api.render.com/v1/owners`, extrayendo el ID exacto del JSON devuelto y exportándolo en `infra/.env`, tras lo cual el aprovisionamiento avanzó sin inconvenientes.
+
+### Límite de retención de historial en Neon Free Tier (`history_retention_seconds`)
+- **Diagnóstico**: El proveedor de Neon solicita por defecto 86400 segundos (24 horas) de historial PITR. En el plan gratuito de Neon, el máximo permitido es de 21600 segundos (6 horas), lo que provocaría que el apply falle con `requested history retention seconds exceeds allowed maximum`.
+- **Solución**: Se fijó explícitamente `history_retention_seconds = 21600` en la definición del recurso `neon_project.preprod`.
+
+### Atributo de rama por defecto (`default_branch_id`)
+- **Diagnóstico**: La documentación antigua del provider hacía referencia a `branch_id`, lo cual genera un error de atributo no soportado (`Unsupported attribute`) en versiones recientes del provider.
+- **Solución**: Se utilizó `neon_project.preprod.default_branch_id` tanto en `neon_role` como en `neon_database`.
+
+## Declaración de uso de IA
+
+Utilicé asistencia de IA (Antigravity/Gemini) para:
+1. Diseñar y estructurar los archivos de Terraform en `infra/` (`main.tf`, `variables.tf`, `outputs.tf`) siguiendo las pautas de versiones y recursos requeridos por la cátedra.
+2. Diagnosticar el error de API `HTTP 400: org_id is required` de Neon e implementar la variable `neon_org_id`.
+3. Consultar y corregir el `RENDER_OWNER_ID` vía endpoint `/v1/owners`.
+4. Adaptar la derivación dinámica de `DATABASE_URL` para PostgreSQL en Go y validar la respuesta de endpoints en vivo (`/health`, `/api/auth/login` y frontend).
+Cada acción, plan y ejecución fue corrida y verificada personalmente en la terminal local y en las consolas web de Neon y Render.
+

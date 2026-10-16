@@ -98,3 +98,11 @@ reporte-rojo/
 reporte-verde/
 app/frontend/reporte-rojo/
 app/frontend/reporte-verde/
+
+# ==========================================
+# Terraform (IaC)
+# ==========================================
+*.tfstate
+*.tfstate.*
+.terraform/
+*.tfvars
