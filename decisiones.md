@@ -729,3 +729,49 @@ Utilicé asistencia de IA (Antigravity/Gemini) para:
 4. Adaptar la derivación dinámica de `DATABASE_URL` para PostgreSQL en Go y validar la respuesta de endpoints en vivo (`/health`, `/api/auth/login` y frontend).
 Cada acción, plan y ejecución fue corrida y verificada personalmente en la terminal local y en las consolas web de Neon y Render.
 
+# Decisiones TP9
+
+## Las tres capas de seguridad automatizada (DevSecOps / Shift-Left)
+
+- **Capa 1 — Secretos (Secret Scanning y Push Protection)**: Verificado activo en *Settings → Advanced Security*. Los secretos reconocidos son bloqueados por GitHub antes de ingresar al historial del repositorio (bloqueo en el push).
+- **Capa 2 — Dependencias (SCA con Dependabot)**: 
+  - Se configuró [.github/dependabot.yml](.github/dependabot.yml) cubriendo los 3 ecosistemas del proyecto: `gomod` en `/app/backend`, `npm` en `/app/frontend` y `github-actions` en `/`.
+  - Se activaron en el repositorio las *Dependabot alerts* y *Dependabot security updates*.
+- **Capa 3 — Código propio (SAST con CodeQL)**: Se activó la configuración por defecto de CodeQL (*Code security and analysis*), la cual analiza estáticamente en cada Pull Request el código de Go, JavaScript/TypeScript y las GitHub Actions buscando vulnerabilidades del OWASP Top 10.
+
+## Análisis del PR de Dependabot mergeado
+
+- **Pull Request seleccionado**: [PR #44](https://github.com/Gabriellaniado/ingsoft3-tp01/pull/44) — `chore(deps): bump follow-redirects from 1.16.0 to 1.16.1 in /app/frontend`.
+- **Qué actualizaba y de qué versión a cuál**: Actualizó la dependencia `follow-redirects` (utilizada internamente por Axios en la SPA de React) de la versión `1.16.0` a la versión `1.16.1`.
+- **Tipo de cambio SemVer**: Es una actualización de tipo **PATCH**. En SemVer (`MAJOR.MINOR.PATCH`), un incremento en el número de parche indica corrección de defectos o resolución de vulnerabilidades de seguridad sin alterar la interfaz pública ni introducir incompatibilidades (*breaking changes*).
+- **Por qué me animé a mergearlo**:
+  - El changelog y el commit de la librería detallan únicamente una corrección de seguridad puntual.
+  - Toda la red de seguridad construida durante el semestre (pruebas unitarias en Vitest para frontend, pruebas de API en Go, umbral de cobertura y compuertas del pipeline de CI) corrió sobre el PR arrojando resultado 100% verde (`CI/build-backend` y `CI/build-frontend`). Esa automatización continua es la que brinda la certeza técnica para adoptar parches de seguridad en minutos sin temor a regresiones.
+
+## Observabilidad y telemetría (UptimeRobot y Sentry)
+
+- **Soporte de método HTTP HEAD en `/health`**: Se adaptó el router de Gin en el backend para admitir peticiones `HEAD` además de `GET`. Esto es indispensable para monitores externos como UptimeRobot, cuyo plan gratuito realiza consultas HEAD para comprobar disponibilidad sin descargar el cuerpo de la respuesta.
+- **Instrumentación de Sentry en Backend (Go)**:
+  - Se utilizó el SDK oficial `github.com/getsentry/sentry-go` y su middleware `sentrygin`.
+  - El DSN no se hardcodea: se inyecta mediante la variable de entorno `SENTRY_DSN` en Render exclusivamente para Producción (`turnero-api-prod`). Si la variable está ausente (como en entornos locales o de test), la librería permanece inactiva sin alterar el funcionamiento.
+  - Se incorporó el endpoint temporal `/api/falla` para validar la captura de excepciones no controladas con stacktrace en Sentry.
+- **Instrumentación de Sentry en Frontend (React)**:
+  - Se instaló `@sentry/react` en la SPA y se inicializó en `app/frontend/src/main.tsx` con `browserTracingIntegration()`.
+  - El DSN público del cliente se incluyó en el código fuente, respetando el principio de que los DSN de clientes web son de solo envío de eventos (*write-only ingestion*) y viajan naturalmente en el bundle JavaScript descargado por el navegador.
+
+## Problemas encontrados y cómo se resolvieron
+
+### Rechazo de peticiones HEAD en el endpoint de salud (`HTTP 404 en /health`)
+- **Diagnóstico**: Al validar previamente el endpoint mediante `curl -I https://turnero-api-prod.onrender.com/health`, el servidor devolvió `HTTP 404`. En el framework Gin de Go, registrar una ruta con `r.GET("/health")` solo asocia el verbo GET y no resuelve de forma implícita peticiones HEAD.
+- **Solución**: Se asoció un manejador compartido tanto a `r.GET("/health", healthHandler)` como a `r.HEAD("/health", healthHandler)`, permitiendo que UptimeRobot valide el estado 200 sin falsas alarmas de caída.
+
+## Declaración de uso de IA
+
+Utilicé asistencia de IA (Antigravity/Gemini) para:
+1. Diseñar y configurar `.github/dependabot.yml` con las rutas exactas de los ecosistemas Go, npm y Actions.
+2. Analizar el PR de Dependabot #44 verificando compatibilidad SemVer y tests en verde.
+3. Diagnosticar la respuesta 404 en peticiones HEAD de Gin y adaptar la ruta `/health`.
+4. Integrar los SDKs de Sentry en Go y React configurando middlewares y trazabilidad.
+Cada cambio fue verificado localmente con suites de tests unitarios, builds de producción y pruebas HTTP antes de ser integrado.
+
+

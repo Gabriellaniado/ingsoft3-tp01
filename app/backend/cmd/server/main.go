@@ -20,6 +20,9 @@ import (
 	"turnero/internal/middleware"
 	"turnero/internal/settings"
 	"turnero/internal/users"
+
+	"github.com/getsentry/sentry-go"
+	sentrygin "github.com/getsentry/sentry-go/gin"
 )
 
 // main inicia el servidor: carga variables de entorno, conecta a la BD, ejecuta migraciones y registra las rutas.
@@ -110,13 +113,36 @@ func main() {
 	r := gin.Default()
 	r.Use(middleware.CORS())
 
-	// Health check — usado por el smoke test del pipeline (TP6).
-	// Ruta pública, sin auth, en el router raíz.
-	r.GET("/health", func(c *gin.Context) {
+	// Inicializar Sentry si la variable de entorno SENTRY_DSN está presente
+	if sentryDSN := os.Getenv("SENTRY_DSN"); sentryDSN != "" {
+		if err := sentry.Init(sentry.ClientOptions{
+			Dsn:              sentryDSN,
+			TracesSampleRate: 1.0,
+			Environment:      env("ENVIRONMENT", "production"),
+		}); err != nil {
+			log.Printf("Error inicializando Sentry: %v\n", err)
+		} else {
+			log.Println("✓ Sentry inicializado en backend")
+			defer sentry.Flush(2 * time.Second)
+			r.Use(sentrygin.New(sentrygin.Options{
+				Repanic: true,
+			}))
+		}
+	}
+
+	// Health check — soporta tanto GET como HEAD (requerido por monitores externos como UptimeRobot).
+	healthHandler := func(c *gin.Context) {
 		c.JSON(200, gin.H{"status": "ok"})
-	})
+	}
+	r.GET("/health", healthHandler)
+	r.HEAD("/health", healthHandler)
 
 	api := r.Group("/api")
+
+	// Endpoint de prueba de falla para Sentry (TP9)
+	api.GET("/falla", func(c *gin.Context) {
+		panic("Falla de prueba del TP9 para Sentry")
+	})
 
 	// Public
 	api.POST("/auth/register", authH.Register)
