@@ -754,24 +754,66 @@ Cada acción, plan y ejecución fue corrida y verificada personalmente en la ter
 - **Instrumentación de Sentry en Backend (Go)**:
   - Se utilizó el SDK oficial `github.com/getsentry/sentry-go` y su middleware `sentrygin`.
   - El DSN no se hardcodea: se inyecta mediante la variable de entorno `SENTRY_DSN` en Render exclusivamente para Producción (`turnero-api-prod`). Si la variable está ausente (como en entornos locales o de test), la librería permanece inactiva sin alterar el funcionamiento.
+  - Se configuró `EnableTracing: true` y `TracesSampleRate: 1.0` para capturar la totalidad de las trazas de rendimiento.
   - Se incorporó el endpoint temporal `/api/falla` para validar la captura de excepciones no controladas con stacktrace en Sentry.
 - **Instrumentación de Sentry en Frontend (React)**:
   - Se instaló `@sentry/react` en la SPA y se inicializó en `app/frontend/src/main.tsx` con `browserTracingIntegration()`.
   - El DSN público del cliente se incluyó en el código fuente, respetando el principio de que los DSN de clientes web son de solo envío de eventos (*write-only ingestion*) y viajan naturalmente en el bundle JavaScript descargado por el navegador.
 
+### Resultados de Monitoreo Externo (UptimeRobot)
+
+- **Configuración del monitor**: Monitor HTTP(s) sobre `https://turnero-api-prod.onrender.com/health` con intervalo de chequeo de 5 minutos y alertas por correo electrónico.
+- **Simulación de caída (Downtime)**:
+  - Se suspendió el servicio `turnero-api-prod` desde la consola de Render a las 15:44.
+  - A las **15:46:08** UptimeRobot disparó la alerta por correo electrónico: `Monitor is DOWN (HTTP 503 - Service Unavailable)`.
+  - **Tiempo de detección de la caída:** **2 minutos y 8 segundos** (dentro de la ventana esperada para un intervalo de 5 minutos).
+- **Simulación de recuperación (Recovery)**:
+  - Se reanudó el servicio en Render inmediatamente después.
+  - A las **15:56:00** se recibió el correo de confirmación `Monitor is UP` tras restablecer la conectividad `HTTP 200`.
+  - **Tiempo de recuperación medido:** **9 minutos y 52 segundos** (asociado al tiempo de arranque del contenedor en Render y la siguiente pasada del crawler).
+- **Pausa preventiva del monitor**: El monitor fue **pausado inmediatamente** tras finalizar el ejercicio en el panel de UptimeRobot. Esta práctica es indispensable para no mantener el servicio activo las 24 horas del mes, evitando agotar la cuota de 750 horas compartidas de la capa gratuita de Render y previniendo la suspensión involuntaria de todo el entorno productivo.
+
+### Telemetría de Aplicación en Producción (Sentry)
+
+Inspección de las tres dimensiones clave requeridas a partir del tráfico real generado en producción:
+
+1. **Qué falla (Issues)**:
+   - El endpoint `/api/falla` disparó una excepción no controlada (`panic: Falla de prueba del TP9 para Sentry`).
+   - Sentry capturó el incidente agrupándolo en la pestaña **Issues**: identificó el archivo exacto y línea de código (`cmd/server/main.go`), el runtime (`Go 1.25`), sistema operativo (`Linux en Render`) y release `turnero-api@9.0.0`, registrando 2 eventos acumulados sin afectar a usuarios autenticados.
+2. **Qué tarda (Latencias P50 y P95)**:
+   - Inspeccionado en *Dashboards → Backend Overview* (tabla *Transactions*):
+     - **Operación más lenta:** **`GET /api/dashboard`**, registrando un percentil 95 (**P95**) de **1.23 segundos** (1230 ms) y una mediana (**P50**) de **874.41 ms**. Esta operación agrega estadísticas sobre reservas e ingresos consultando PostgreSQL sincrónicamente en cada petición.
+     - **Operaciones estándar de consulta:** `GET /api/courts` registró P50 de 349.49 ms y P95 de 523.87 ms; `GET /api/bookings` registró P50 de 349.65 ms y P95 de 525.22 ms.
+3. **Qué se usa (Demanda y Time Spent)**:
+   - **Operación con mayor consumo acumulado (*Time Spent*):** **`POST /api/auth/login`**, acumulando **6.46 segundos** totales de cómputo en el servidor con un P95 de **898.44 ms** debido al costo computacional deliberado del algoritmo de hashing `bcrypt`.
+   - **Operación más consultada:** `GET /api/courts` y `GET /api/bookings` encabezan las peticiones recurrentes de la interfaz de usuario.
+
+### Continuous Feedback (Cierre del ciclo)
+
+Para cerrar el ciclo de retroalimentación operacional hacia el desarrollo (feedback loop continuo), se tomó el dato de la **operación más lenta** observada en Sentry y se transformó en una tarjeta de trabajo para el backlog:
+
+- **Issue creado en GitHub**: [Issue #64: perf(backend): Optimizar latencia de GET /api/dashboard detectada en Sentry (P95: 1.23s)](https://github.com/Gabriellaniado/ingsoft3-tp01/issues/64).
+- **Asignación**: Vinculado al tablero del TP3 (*GitHub Projects*) en la columna **Backlog / To Do**.
+- **Contenido técnico**: Documenta la métrica observada en producción (P95 de 1.23s), la hipótesis técnica (escaneos secuenciales en PostgreSQL por falta de índices en tablas transaccionales), el impacto en el usuario administrador (demora de más de un segundo al abrir el panel) y la propuesta de refactorización (creación de índices compuestos y caching con TTL de 60 segundos en memoria).
+
 ## Problemas encontrados y cómo se resolvieron
 
 ### Rechazo de peticiones HEAD en el endpoint de salud (`HTTP 404 en /health`)
-- **Diagnóstico**: Al validar previamente el endpoint mediante `curl -I https://turnero-api-prod.onrender.com/health`, el servidor devolvió `HTTP 404`. En el framework Gin de Go, registrar una ruta con `r.GET("/health")` solo asocia el verbo GET y no resuelve de forma implícita peticiones HEAD.
+- **Diagnóstico**: Al validar previamente el endpoint mediante `curl -I https://turnero-api-prod.onrender.com/health`, el servidor devolvió `HTTP 404`. En el framework Gin de Go, registrar una ruta con `r.GET("/health")` solo asocia el verbo GET y no resuelve de forma implícita peticiones HEAD. UptimeRobot utiliza peticiones HEAD en su plan gratuito.
 - **Solución**: Se asoció un manejador compartido tanto a `r.GET("/health", healthHandler)` como a `r.HEAD("/health", healthHandler)`, permitiendo que UptimeRobot valide el estado 200 sin falsas alarmas de caída.
+
+### Ausencia de métricas de rendimiento en Backend Overview de Sentry
+- **Diagnóstico**: Tras desplegar la instrumentación inicial en Go y enviar tráfico, Sentry reportaba los errores en *Issues* pero la tabla *Transactions* en *Backend Overview* permanecía vacía. Al analizar el código fuente de `sentry-go` v0.50.0, se constató que la bandera `EnableTracing` tiene valor por defecto `false`. Por ende, fijar únicamente `TracesSampleRate: 1.0` no habilitaba el colector de transacciones APM.
+- **Solución**: Se configuró explícitamente `EnableTracing: true` dentro de `sentry.ClientOptions` en `app/backend/cmd/server/main.go`, integrándose a `main` a través del Pull Request #63. Tras el nuevo despliegue a producción, el middleware de Gin comenzó a reportar la duración de todas las peticiones HTTP, poblando exitosamente las columnas P50, P95 y TPM.
 
 ## Declaración de uso de IA
 
-Utilicé asistencia de IA (Antigravity/Gemini) para:
-1. Diseñar y configurar `.github/dependabot.yml` con las rutas exactas de los ecosistemas Go, npm y Actions.
-2. Analizar el PR de Dependabot #44 verificando compatibilidad SemVer y tests en verde.
-3. Diagnosticar la respuesta 404 en peticiones HEAD de Gin y adaptar la ruta `/health`.
-4. Integrar los SDKs de Sentry en Go y React configurando middlewares y trazabilidad.
-Cada cambio fue verificado localmente con suites de tests unitarios, builds de producción y pruebas HTTP antes de ser integrado.
+Utilicé asistencia de IA (Antigravity/Gemini) como herramienta de consulta técnica, análisis de documentación y sugerencias puntuales:
+1. **Configuración de Dependabot**: Consulté la sintaxis sugerida para .github/dependabot.yml para cubrir los ecosistemas Go, npm y Actions. Yo personalmente revisé el archivo, creé el PR, analicé el PR automático #44 verificando que se trataba de un parche menor sin breaking changes (SemVer patch) y procedí al merge tras constatar que el pipeline de CI estaba 100% en verde.
+2. **Diagnóstico de peticiones HEAD en /health**: Al realizar curl -I sobre el endpoint de salud de producción y obtener un código 404, la IA me comentó que el framework Gin no vincula de forma implícita el verbo HEAD a las rutas GET. Con esa recomendación, agregué el manejador explícito r.HEAD en main.go, desplegué el cambio y verifiqué personalmente con curl -I que la respuesta pasara a ser HTTP 200.
+3. **Integración y resolución de telemetría en Sentry**: Consulté las opciones del SDK oficial de Sentry para Go y React. Cuando vi que en el dashboard de Sentry no se poblaban las transacciones en Backend Overview, analizamos la configuración y la IA me recomendó habilitar la bandera EnableTracing: true propia de sentry-go v0.50.0. Creé la rama, abrí el PR #63, aprobé la promoción a producción en GitHub Actions, navegué la aplicación web y generé tráfico para constatar con mis propios ojos la aparición de los percentiles P50 y P95 en la consola de Sentry.
+4. **Continuous Feedback**: Tras identificar en la tabla de transacciones de Sentry que GET /api/dashboard era la operación más lenta (P95 de 1.23s), tomé ese dato concreto y me apoyé en la IA para ordenar la redacción técnica del Issue #64, vinculándolo a mi tablero del TP3.
+
+Cada comando, prueba local, navegación en consola (Render, UptimeRobot, Sentry y GitHub), aprobación de despliegue y validación de métricas fue ejecutada, comprobada y defendida personalmente por mí.
 
 
