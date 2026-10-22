@@ -117,6 +117,7 @@ func main() {
 	if sentryDSN := os.Getenv("SENTRY_DSN"); sentryDSN != "" {
 		if err := sentry.Init(sentry.ClientOptions{
 			Dsn:              sentryDSN,
+			EnableTracing:    true,
 			TracesSampleRate: 1.0,
 			Environment:      env("ENVIRONMENT", "production"),
 		}); err != nil {
