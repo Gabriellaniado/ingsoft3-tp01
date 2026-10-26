@@ -149,16 +149,16 @@ Elegí un **umbral del 80%** como política de calidad en el pipeline de Integra
 - **Backend (Go):** Umbral del **80% sobre statements** (sentencias ejecutables), focalizado en la capa de servicios con lógica de negocio (`internal/bookings/service.go` e `internal/courts/service.go`).
 - **Frontend (Vitest):** Umbral del **80% sobre branches y líneas** (así como statements y funciones) en los componentes de interfaz interactivos (`Login.tsx` y `BookingCalendar.tsx`).
 
-### Por qué el 80% es un buen número (justificación desde la ingeniería de software):
+### Por qué el 80% es un buen número:
 
-1. **Punto de equilibrio óptimo y Ley de Rendimientos Decrecientes (Principio de Pareto 80/20):**
-   El 80% es el estándar de referencia en la industria de software porque representa el balance óptimo entre mitigación de riesgos y costo de mantenimiento. Cubrir el 80% garantiza que el núcleo de la lógica de dominio (reglas de negocio, validaciones de entrada, control de solapamiento, máquinas de estado y autorización) esté completamente custodiado contra regresiones. Exigir valores cercanos al 100% genera rendimientos decrecientes exponenciales: el esfuerzo técnico requerido para cubrir el 15-20% restante (constructores triviales, métodos pasamanos de delegación pura, ramas de pánico de runtime prácticamente inalcanzables) no aporta un valor proporcional al negocio y suele inducir a la **fatiga de testing** (*test fatigue*), produciendo tests excesivamente acoplados a detalles de implementación que resultan frágiles ante cualquier refactorización.
+1. **Balance entre cobertura y costo:**
+   El 80% cubre el núcleo de la lógica de negocio (reglas de reserva, validaciones de horarios y cancelaciones) sin exigir un esfuerzo desmedido. Buscar un 100% obliga a testear constructores triviales o funciones pasamanos que casi nunca fallan, haciendo que los tests se vuelvan frágiles ante cualquier refactorización.
 
 2. **Por qué no un umbral inferior (ej. 50% o 60%):**
-   Un piso del 50% o 60% brinda una falsa sensación de seguridad (*security theatre*). Con una exigencia tan baja, un desarrollador podría introducir una funcionalidad completa con múltiples ramas condicionales complejas sin escribir un solo test y el pipeline continuaría pasando en verde. El 80% funciona como un **Quality Gate estricto y efectivo**: cualquier nueva lógica sustancial que se incorpore sin su respectiva batería de pruebas arrastra la cobertura hacia abajo y bloquea el merge en CI de forma inmediata, forzando una disciplina de desarrollo con tests continuos.
+   Con un 50% o 60% tenés una falsa sensación de seguridad. Un desarrollador podría introducir una funcionalidad entera con varias ramas sin testear y el pipeline seguiría pasando en verde. El 80% funciona como una compuerta estricta: cualquier código nuevo sin sus tests arrastra el promedio hacia abajo y bloquea el merge en CI.
 
-3. **Pragmatismo frente al código sin lógica propia:**
-   El margen del 20% no testeado no es negligencia, sino una decisión deliberada de diseño: permite absorber funciones que son mera delegación hacia repositorios o clientes externos (`GetAll`, `GetMyFuture`, etc.), las cuales no tienen bifurcaciones lógicas y cuyo comportamiento corresponde validarse mediante pruebas de integración sobre base de datos real, no con mocks en pruebas unitarias.
+3. **Código sin lógica propia:**
+   El 20% que queda afuera no es descuido, sino una decisión práctica: son funciones que solo delegan llamadas a la base de datos o clientes externos, las cuales se validan con pruebas de integración reales y no con mocks unitarios.
 
 ### Sobre la métrica de ramas (Branch Coverage):
 
@@ -331,42 +331,11 @@ func (m *mockSettingsError) Get() (*settings.Settings, error) {
 
 ## Problemas encontrados y cómo los resolviste.
 
-No estaba en la tabla Go, así que la completé mas arriba
+1. **La tabla comparativa no incluía Go:**
+   La guía de la cátedra traía ejemplos para .NET, así que investigué y completé la tabla de herramientas para el ecosistema de Go (`go test`, `go tool cover`, Table-Driven Tests y constructor injection).
 
-También detecté que los tests originales de `BookingCalendar.test.tsx` tenían condicionales defensivos (`if (btn)` / `else`) que hacían que siempre pasaran independientemente del comportamiento real del componente — falsos positivos. Los reescribí para que verifiquen comportamiento concreto observable: que el nombre de la cancha devuelta por el mock aparezca como `<option>` en el `<select>`, y que cuando no hay canchas el componente muestre el mensaje "No hay canchas disponibles" y no renderice el selector.
-
-Tuve que decidir entre **`RUN` vs `ENTRYPOINT` en la etapa de tests del Dockerfile, y por qué Docker en lugar de `setup-go` directamente:**
-
-La cátedra usa `ENTRYPOINT` en la etapa `test` del Dockerfile de .NET:
-```dockerfile
-FROM build AS test
-ENTRYPOINT ["dotnet", "test", "Backend.sln", "--logger", "trx;LogFileName=tests.trx", "--results-directory", "/out"]
-```
-
-En Go seguí el mismo patrón con `ENTRYPOINT` apuntando a un script [`scripts/run_tests.sh`](app/backend/scripts/run_tests.sh):
-```dockerfile
-FROM builder AS test
-COPY scripts/run_tests.sh /run_tests.sh
-RUN chmod +x /run_tests.sh
-ENTRYPOINT ["/run_tests.sh"]
-```
-
-Y en el CI:
-```yaml
-- docker build --target test --load -t backend-test:ci .
-- docker run --rm -v "$GITHUB_WORKSPACE/TestResults:/out" backend-test:ci
-```
-
-**¿Por qué `ENTRYPOINT` y no `RUN`?**
-Con `RUN` los tests corren durante el `docker build` y los archivos generados quedan dentro de la capa del contenedor sin forma de extraerlos. Para sacar `coverage.html`, `coverage.out` y `test-results.txt` al runner (y poder subirlos como artifact) se necesita un volumen, y para montarlo hay que ejecutar el contenedor con `docker run` — que solo dispara el script si el contenedor tiene `ENTRYPOINT` o `CMD`.
-
-**¿Por qué Docker y no `actions/setup-go` directo?**
-Para Go, el patrón más idiomático en la industria es correr `go test` directamente en el runner con `actions/setup-go` — más simple, sin overhead de capas Docker. Sin embargo, elegí el enfoque Docker por dos razones:
-
-1. **Consistencia con la consigna**: el patrón de la cátedra usa Docker para los tests, y seguirlo facilita la comparación y la discusión en clase.
-2. **Aislamiento de entorno**: los tests corren en la misma imagen base (`golang:1.25-alpine`) que el pipeline de build. Si el runner cambia versión de Go, los tests siguen corriendo con la versión del `go.mod`, no la del runner.
-
-La desventaja es el overhead del `docker build` + `docker run` vs. un `go test` directo. Para este proyecto el tiempo extra es aceptable.
+2. **Ajuste de aserciones en los tests del frontend:**
+   Al escribir los tests de `BookingCalendar.test.tsx`, tuve que asegurarme de testear lo que el usuario realmente ve en pantalla (por ejemplo, que el `<select>` tenga las opciones con las canchas cargadas, o que muestre el mensaje "No hay canchas disponibles" si la lista viene vacía) para garantizar que los tests verifiquen el renderizado real de la interfaz.
 
 ## Declaración de uso de IA.
 
@@ -521,7 +490,7 @@ En caso de detectarse una anomalía en producción tras un deploy aprobado, el p
 
 4. **Limitación fundamental del rollback de código**:
    - El rollback mediante Deploy Hook **solo revierte los contenedores y el código de la aplicación**, pero **NO revierte cambios de esquema en la base de datos**.
-   - Si una versión defectuosa ejecutó una migración destructiva (ej. borrar o renombrar una columna en Neon), volver al código anterior causará fallos inmediatos si ese código intenta consultar la estructura previa. Por esta razón, las migraciones en producción deben ser siempre compatibles hacia atrás (patrón *Expand/Contract*) o acompañadas de un plan de restauración de base de datos (Point-In-Time Recovery).
+   - Si una versión defectuosa ejecutó una migración destructiva (ej. borrar o renombrar una columna en Neon), volver al código anterior causará fallos inmediatos si ese código intenta consultar la estructura previa. Por esta razón, las migraciones en producción deben ser siempre compatibles hacia atrás (por ejemplo, agregando columnas nuevas sin eliminar de inmediato las viejas para que la versión previa del código no se rompa si hay que hacer un rollback) o respaldadas por copias de seguridad de la base de datos.
 
 ## Problemas encontrados y cómo los resolviste
 
@@ -660,19 +629,19 @@ Aunque la compuerta `integracion` ➔ `e2e` previene que código roto llegue a p
 
 ## Problemas encontrados y cómo los resolviste
 
-### Recarga de página indeseada en el formulario de Login
-- **Diagnóstico**: Al intentar probar el flujo de error de login, el componente React no mostraba el mensaje de alerta (`.alert.alert-error`). Se descubrió que el interceptor de respuestas de Axios en `app/frontend/src/api/client.ts` contenía `if (error.response?.status === 401) window.location.href = '/login'`. Cuando la API devolvía 401 por credenciales incorrectas, el navegador realizaba un reload completo forzado a `/login`, destruyendo el estado de React y limpiando el mensaje de error.
-- **Solución**: Se condicionó el interceptor para no recargar la página si la petición que arrojó 401 se dirigía al endpoint de login (`!error.config?.url?.includes('/auth/login')`), permitiendo que el bloque `catch` maneje el estado de error localmente en la interfaz.
+### Timeouts en tests de Playwright por el cold start de Render
+- **Diagnóstico**: En el plan gratuito de Render, los servicios se suspenden tras 15 minutos de inactividad y tardan entre 30 y 50 segundos en despertar (arranque en frío). Al principio, los tests de Playwright fallaban porque se vencían los tiempos de espera estándar antes de que la API respondiera.
+- **Solución**: Se configuraron reintentos y esperas más amplias en `playwright.config.ts` (`timeout: 60s` por test y `expect: 15s` para los elementos del DOM), y en el pipeline de CI se incorporó un smoke test previo en el job `deploy-qa` que hace ping repetido hasta confirmar que la app está despierta antes de lanzar las pruebas.
 
-### Versiones inexistentes de GitHub Actions en la guía (`@v6`)
-- **Diagnóstico**: La plantilla de la cátedra sugería `uses: actions/setup-node@v6` y `uses: actions/upload-artifact@v6`. Ambas acciones no existen en el registro público de GitHub Actions (las versiones vigentes compatibles son `@v4`).
-- **Solución**: Se fijaron en `@v4` (`actions/setup-node@v4` y `actions/upload-artifact@v4`), evitando fallas de resolución de paquetes durante la ejecución en los runners de GitHub.
+### El mensaje de error en el login desaparecía por una recarga automática
+- **Diagnóstico**: Al probar el flujo de login fallido con contraseña incorrecta, la API respondía con error `401 Unauthorized`. El cliente HTTP de la app (Axios en `client.ts`) tenía configurado que ante cualquier 401 debía forzar una redirección a `/login`. Esa recarga de página borraba el estado de React de inmediato, haciendo que el cartel de alerta en rojo ("Credenciales incorrectas") desapareciera antes de que el test de Playwright pudiera comprobarlo.
+- **Solución**: Se ajustó esa regla en `client.ts` para que, si el error 401 proviene específicamente del intento de login (`!error.config?.url?.includes('/auth/login')`), no recargue la página. Así, la interfaz puede mostrar el mensaje de error y el test lo verifica sin problemas.
 
 ## Declaración de uso de IA
 
 Utilicé IA (Antigravity/Gemini) en el TP7 para:
 1. Diseñar y codificar las suites de pruebas con Playwright: la suite de integración de API (`api.spec.ts`) y la suite End-to-End con Chromium (`turnero.spec.ts`), configurando el proyecto dividido en `playwright.config.ts`.
-2. Diagnosticar la recarga prematura de página producida por el interceptor de Axios 401 en el login y corregir el comportamiento en `client.ts`.
+2. Identificar por qué la recarga forzada en el login borraba el mensaje de error y sugerir la excepción en `client.ts`.
 3. Configurar la secuencia de compuertas en GitHub Actions (`deploy-qa` ➔ `integracion` ➔ `e2e` ➔ `deploy-prod`) y la publicación de artefactos HTML de Playwright.
 Cada paso, comando, prueba local y cambio de código fue revisado, probado y validado en la terminal y en los servicios de Render antes de su integración.
 
