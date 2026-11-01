@@ -481,8 +481,9 @@ En caso de detectarse una anomalía en producción tras un deploy aprobado, el p
 2. **Disparar los Deploy Hooks con el commit anterior**:
    ```bash
    SHA_ANTERIOR="6d9dafdb3dc73c65ef922c1c2c2537b6aeb7e5e4"
-   curl -fsS "https://api.render.com/deploy/srv-das3njbbc2fs7396s1ng?key=m_Ta37P6NPc&ref=$SHA_ANTERIOR"
-   curl -fsS "https://api.render.com/deploy/srv-das3phu0tbcc73dn74sg?key=N1aOGJ21hz0&ref=$SHA_ANTERIOR"
+   # Las URLs de los hooks (con su key) se exportan como variables de entorno desde la terminal; no se escriben en el repo.
+   curl -fsS "$HOOK_API_PROD&ref=$SHA_ANTERIOR"
+   curl -fsS "$HOOK_FRONT_PROD&ref=$SHA_ANTERIOR"
    ```
 3. **Tiempo medido en la práctica**:
    - Se ejecutó el rollback de prueba desde la terminal cronometrando hasta que Render dejó el commit anterior en estado **Live** en producción.
@@ -501,6 +502,17 @@ Al intentar publicar las imágenes usando el `GITHUB_TOKEN` con `permissions: pa
 Diagnóstico: el `GITHUB_TOKEN` en algunas configuraciones de cuenta no tiene permiso para crear paquetes en ghcr.io. Los paquetes ya existían de TP2 (docker-compose.registry), pero la primera corrida con el nuevo pipeline falló igualmente.
 
 Solución: se reemplazó el `GITHUB_TOKEN` por un PAT (Personal Access Token) con scope `write:packages`, guardado como secret `GHCR_TOKEN` en el repositorio. El concepto es el mismo: una credencial que el pipeline usa para autenticarse sin quedar en el código. La diferencia con el `GITHUB_TOKEN` es que el PAT requiere manejo manual (creación, rotación), pero resuelve el problema de permisos.
+
+### Deploy Hooks de PROD expuestos en el repositorio público
+
+Después de la entrega noté que en la sección de rollback de este mismo documento había dejado las URLs reales de los Deploy Hooks de producción (`turnero-api-prod` y `turnero-front-prod`), con su `key`, en un repositorio público. El riesgo era que cualquiera que las leyera pudiera disparar despliegues de mis servicios de PROD (no daba acceso a datos ni a la base, pero sí a la disponibilidad). El escáner de secretos de GitHub no lo frenó: una URL con `key=` no tiene un formato de secreto que reconozca.
+
+Qué hice:
+1. Regeneré los dos hooks en Render (Settings → Deploy Hook), lo que invalida las claves viejas.
+2. Actualicé `RENDER_HOOK_API_PROD` y `RENDER_HOOK_FRONT_PROD` en el environment `production` de GitHub y verifiqué que los hooks nuevos funcionan.
+3. Reemplacé las URLs del procedimiento de rollback por variables (`$HOOK_API_PROD`, `$HOOK_FRONT_PROD`), en un commit posterior a la fecha de corte. No toqué los tags de las releases ni reescribí el historial: las claves viejas siguen en el historial de git, pero ya están invalidadas.
+
+Qué aprendí: los comandos de un runbook se documentan con variables, nunca con el secreto real, y rotar la credencial es lo que cierra el riesgo (borrarla del archivo no alcanza, porque queda en el historial).
 
 ## Declaración de uso de IA
 
