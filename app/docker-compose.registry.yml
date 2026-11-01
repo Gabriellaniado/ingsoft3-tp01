@@ -14,7 +14,9 @@ services:
       retries: 10
 
   backend:
-    image: ghcr.io/gabriellaniado/ingsoft3-tp01-backend:v0.1.0
+    # Imagen publicada por el pipeline (etiqueta sha-<commit>, sin "latest"). Para actualizarla,
+    # cambiar el SHA por el de un commit de main cuyo pipeline ya la haya publicado.
+    image: ghcr.io/gabriellaniado/ingsoft3-tp01-backend:sha-8076cacd092c4310aef2f6bd45374a066912b7fd
     env_file:
       - .env
     ports:
@@ -24,7 +26,7 @@ services:
         condition: service_healthy
 
   frontend:
-    image: ghcr.io/gabriellaniado/ingsoft3-tp01-frontend:v0.1.0
+    image: ghcr.io/gabriellaniado/ingsoft3-tp01-frontend:sha-8076cacd092c4310aef2f6bd45374a066912b7fd
     ports:
       - "3000:80"
     depends_on:
